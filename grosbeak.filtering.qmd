@@ -149,12 +149,32 @@ vcfR.trim
 Now we will visualize different per SNP missing data thresholds and identify a value that optimizes the trade-off between amount of missing data and the total number of SNPs retained.
 
 ```{r}
-#see what effect trimming samples and technical replicates has had on missing data across the dataset
+#see what effect trimming samples has had on missing data across the dataset
 by.snp<-missing_by_snp(vcfR.trim)
 ```
 
 Test various SNP completeness thresholds to see if proportion missing data drives sample placement in an unrooted neighbor-joining tree
 ```{r}
+#test 70% completeness threshold
+filt<-missing_by_snp(vcfR.trim, cutoff=.7)
+filt
+#convert to genlight
+gen<-vcfR2genlight(filt)
+#fix sample names to fit in <= 10 characters
+gen@ind.names
+gen@ind.names<-gsub("P_hybrid_","hyb", gen@ind.names)
+gen@ind.names<-gsub("P_ludovicianus_","lud", gen@ind.names)
+gen@ind.names<-gsub("P_melanocephalus_","mel", gen@ind.names)
+gen@ind.names
+pop(gen)<-gen@ind.names
+#assign populations (a StaMPP requirement)
+gen@pop<-as.factor(gen@ind.names)
+#generate pairwise divergence matrix
+sample.div <- stamppNeisD(gen, pop = FALSE)
+#export for splitstree
+stamppPhylip(distance.mat=sample.div, file="~/Desktop/grosbeak.rad/grosbeak.70.splits.txt")
+knitr::include_graphics(c("/Users/devonderaad/Desktop/grosbeak.rad/70.splits.png"))
+
 #test 80% completeness threshold
 filt<-missing_by_snp(vcfR.trim, cutoff=.8)
 filt
@@ -172,8 +192,8 @@ gen@pop<-as.factor(gen@ind.names)
 #generate pairwise divergence matrix
 sample.div <- stamppNeisD(gen, pop = FALSE)
 #export for splitstree
-#stamppPhylip(distance.mat=sample.div, file="~/Desktop/grosbeak.80.splits.txt")
-knitr::include_graphics(c("/Users/devonderaad/Desktop/80.splits.png"))
+stamppPhylip(distance.mat=sample.div, file="~/Desktop/grosbeak.rad/grosbeak.80.splits.txt")
+knitr::include_graphics(c("/Users/devonderaad/Desktop/grosbeak.rad/80.splits.png"))
 
 #repeat with 90% completeness threshold
 filt<-missing_by_snp(vcfR.trim, cutoff=.9)
@@ -192,8 +212,8 @@ gen@pop<-as.factor(gen@ind.names)
 #generate pairwise divergence matrix
 sample.div <- stamppNeisD(gen, pop = FALSE)
 #export for splitstree
-#stamppPhylip(distance.mat=sample.div, file="~/Desktop/grosbeak.90.splits.txt")
-knitr::include_graphics(c("/Users/devonderaad/Desktop/90.splits.png"))
+stamppPhylip(distance.mat=sample.div, file="~/Desktop/grosbeak.rad/grosbeak.90.splits.txt")
+knitr::include_graphics(c("/Users/devonderaad/Desktop/grosbeak.rad/90.splits.png"))
 
 #repeat with 100% completeness threshold
 filt<-missing_by_snp(vcfR.trim, cutoff=1)
@@ -212,8 +232,8 @@ gen@pop<-as.factor(gen@ind.names)
 #generate pairwise divergence matrix
 sample.div <- stamppNeisD(gen, pop = FALSE)
 #export for splitstree
-#stamppPhylip(distance.mat=sample.div, file="~/Desktop/grosbeak.100.splits.txt")
-knitr::include_graphics(c("/Users/devonderaad/Desktop/100.splits.png"))
+stamppPhylip(distance.mat=sample.div, file="~/Desktop/grosbeak.rad/grosbeak.100.splits.txt")
+knitr::include_graphics(c("/Users/devonderaad/Desktop/grosbeak.rad/100.splits.png"))
 ```
 
 
@@ -241,7 +261,9 @@ heatmap.bp(gq, rlabels = FALSE)
 ```
 
 ## Separate sex-linked SNPs from autosomal SNPs
-```{r}
+
+This chunk is not run (eval=FALSE is set in the chunk header) because I ended up deciding that the cutoff is too arbitrary, and reviewers would likely balk at this approach to isolating Z-linked SNPs as untrustworthy. I think this is better left for a future project with a good reference genome and whole genome data. In the meantime, I've left this code here as an artifact in case I need to come back to it in the future.
+```{r, eval=FALSE}
 #extract depth matrix
 dpmat<-extract.gt(filt, element = "DP")
 dpmat[1:5,1:5] #check
@@ -272,8 +294,6 @@ hist(x, breaks = 200)
 sort(table(round(x,2)),decreasing = TRUE)
 #1.86 is the 'typical' autosomal loci, so we will be looking for SNPs with > 1.8x this ratio (we expect 2x but want to account for noise)
 table(x > 3.348)
-
-
 
 #isolate X-linked SNPs
 xSNPs<-filt[c(x>3.348),]
@@ -320,30 +340,18 @@ knitr::include_graphics(c("/Users/devonderaad/Desktop/autosomal.splits.png"))
 Now filter to get unlinked SNP datasets
 ```{r}
 #perform linkage filtering to get a reduced vcf with only unlinked SNPs
-autoSNPs.thin<-distance_thin(autoSNPs, min.distance = 1000)
-#perform linkage filtering to get a reduced vcf with only unlinked SNPs
-xSNPs.thin<-distance_thin(xSNPs, min.distance = 1000)
+filt.thin<-distance_thin(filt, min.distance = 1000)
 ```
 
 ## write vcf to disk for downstream analyses
 ```{r}
-#get info for all SNPs passing filtering in the autosomal vcf dataset
-autoSNPs
+#get info for all SNPs passing filtering 
+filt
 #write to disk
-#vcfR::write.vcf(autoSNPs, file = "~/Desktop/grosbeak.auto.filtered.snps.vcf.gz")
+vcfR::write.vcf(filt, file = "~/Desktop/grosbeak.rad/grosbeak.filtered.snps.vcf.gz")
 
 #get info for the thinned SNP dataset
-autoSNPs.thin
+filt.thin
 #write to disk
-#vcfR::write.vcf(autoSNPs.thin, file = "~/Desktop/grosbeak.auto.filtered.unlinked.snps.vcf.gz")
-
-#get info for all SNPs passing filtering in the Z-linked vcf dataset
-xSNPs
-#write to disk
-#vcfR::write.vcf(xSNPs, file = "~/Desktop/grosbeak.Z.filtered.snps.vcf.gz")
-
-#get info for all SNPs passing filtering in the Z-linked vcf dataset
-xSNPs.thin
-#write to disk
-#vcfR::write.vcf(xSNPs.thin, file = "~/Desktop/grosbeak.Z.filtered.unlinked.snps.vcf.gz")
+vcfR::write.vcf(filt.thin, file = "~/Desktop/grosbeak.rad/grosbeak.filtered.unlinked.snps.vcf.gz")
 ```
