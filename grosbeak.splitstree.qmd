@@ -1,0 +1,96 @@
+---
+title: "Grosbeak.splitstree"
+format:
+  html:
+    code-fold: show
+    code-tools: true
+toc: true
+toc-title: Document Contents
+number-sections: true
+embed-resources: true
+---
+
+## load libraries and read in data
+```{r, results=FALSE}
+library(vcfR)
+library(SNPfiltR)
+library(StAMPP)
+library(adegenet)
+library(ggplot2)
+
+#read in file
+v<-read.vcfR("~/Desktop/grosbeak.rad/grosbeak.filtered.snps.vcf.gz")
+```
+
+## make splitstree
+```{r}
+#get info for this dataset
+v
+#convert to genlight
+gen<-vcfR2genlight(v)
+#fix sample names to fit in <= 10 characters
+gen@ind.names
+gen@ind.names<-gsub("P_hybrid_","hyb", gen@ind.names)
+gen@ind.names<-gsub("P_ludovicianus_","lud", gen@ind.names)
+gen@ind.names<-gsub("P_melanocephalus_","mel", gen@ind.names)
+gen@ind.names
+pop(gen)<-gen@ind.names
+#assign populations (a StaMPP requirement)
+gen@pop<-as.factor(gen@ind.names)
+#generate pairwise divergence matrix
+sample.div <- stamppNeisD(gen, pop = FALSE)
+#export for splitstree
+#stamppPhylip(distance.mat=sample.div, file="~/Desktop/grosbeak.rad/grosbeak.90.splits.txt")
+knitr::include_graphics(c("/Users/devonderaad/Desktop/grosbeak.rad/90.splits.png"))
+```
+
+## re-make splitstree with mito and locality info listed in each sample name
+```{r}
+#convert to genlight
+gen<-vcfR2genlight(v)
+
+#read in locality and mito info
+samps<-read.csv("~/Desktop/grosbeak.data.csv")
+samps<-samps[samps$passed.genomic.filtering == "TRUE",] #retain only samples that passed filtering
+samps$sample_id == gen@ind.names #check if sample info table order matches the vcf
+samps<-samps[match(gen@ind.names,samps$sample_id),] #use 'match' to match orders
+samps$sample_id == gen@ind.names #check if this worked
+
+#fix sample names to fit in <= 10 characters and have locality and mito info and still be unique
+gen@ind.names
+gen@ind.names<-gsub("P_hybrid_","", gen@ind.names)
+gen@ind.names<-gsub("P_ludovicianus_","", gen@ind.names)
+gen@ind.names<-gsub("P_melanocephalus_","", gen@ind.names)
+gen@ind.names<-paste(samps$site,gen@ind.names,sep="_")
+gen@ind.names<-paste(samps$mtDNA,gen@ind.names,sep="_")
+gen@ind.names<-gsub("NA","N", gen@ind.names)
+gen@ind.names
+#make splitstree with these updated labels
+pop(gen)<-gen@ind.names
+#assign populations (a StaMPP requirement)
+gen@pop<-as.factor(gen@ind.names)
+#generate pairwise divergence matrix
+sample.div <- stamppNeisD(gen, pop = FALSE)
+#export for splitstree
+#stamppPhylip(distance.mat=sample.div, file="~/Desktop/grosbeak.rad/grosbeak.mito.site.splits.txt")
+```
+
+## Calculate Fst between the ends of the transect
+```{r}
+#isolate only the parental ends of the transects
+v.sub<-v[,c(TRUE,samps$site == 0 | samps$site == 12)]
+
+#make sure this worked
+v.sub
+
+#convert vcfR to genlight
+gen<-vcfR2genlight(v.sub)
+
+#assign samples to the three groups shown above
+gen@pop<-as.factor(samps$site[samps$site == 0 | samps$site == 12])
+
+#calculate pairwise Fst using the stampp package
+stamppFst(gen)
+```
+
+

@@ -25,11 +25,6 @@ library(tidyterra)
 library(RColorBrewer)
 #extract <- terra::extract
 #devtools::install_github("ropensci/rnaturalearthhires")
-#read in sample sheet with sample sex info
-samps<-read.csv("~/Desktop/grosbeak.data.csv")
-samps<-samps[samps$passed.genomic.filtering == "TRUE",] #retain only samples that passed filtering
-table(samps$state)
-table(samps$site)
 ```
 
 ### Download data
@@ -41,10 +36,19 @@ table(samps$site)
 #above only needs to be run once
 #if the data package has already been downloaded just do this:
 #path <- get_species_path("Marsh Wren")
+
+#read in sample sheet with sample sex info
+samps<-read.csv("~/Desktop/grosbeak.data.csv")
+samps<-samps[samps$passed.genomic.filtering == "TRUE",] #retain only samples that passed filtering
+table(samps$state)
+table(samps$site)
 ```
 
 #pull in seasonal abundance data for RBGB and check it out
 ```{r}
+#print the dates for the breeding season for our two focal species
+ebirdst_runs[ebirdst_runs$scientific_name == "Pheucticus melanocephalus" | ebirdst_runs$scientific_name == "Pheucticus ludovicianus",]
+
 # load seasonal mean relative abundance at low res
 abd_seasonal <- load_raster("Rose-breasted Grosbeak", 
                             product = "abundance", 
