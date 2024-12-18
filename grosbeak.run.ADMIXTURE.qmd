@@ -1,0 +1,404 @@
+---
+title: "grosbeak.ADMIXTURE"
+format:
+  html:
+    code-fold: show
+    code-tools: true
+toc: true
+toc-title: Document Contents
+number-sections: true
+embed-resources: true
+---
+
+### Read in thinned (i.e., linkage-filtered) vcf to r and remove outgroup
+```{r, results=FALSE}
+library(vcfR)
+library(SNPfiltR)
+library(ggplot2)
+#read in thinned vcf
+v<-read.vcfR("~/Desktop/grosbeak.rad/grosbeak.filtered.unlinked.snps.vcf.gz")
+
+#now move your filtered thinned vcf to the UCLA cluster (in a separate terminal window) like so:
+#scp /Users/devonderaad/Desktop/grosbeak.rad/grosbeak.filtered.unlinked.snps.vcf.gz dderaad@dtn.hoffman2.idre.ucla.edu:/u/project/aguillon/dderaad/grosbeak.rad/admixture/
+```
+
+### Use this bash code to execute ADMIXTURE on the cluster
+```{bash, eval=FALSE}
+#use these bash commands to unzip the vcf files you just wrote out before going on to the next step
+gunzip grosbeak.filtered.unlinked.snps.vcf.gz
+
+#use this thinned vcf file to execute ADMIXTURE on the cluster using this script submitted as a slurm job:
+
+#### submit_job.sh START ####
+#!/bin/bash
+#$ -cwd
+#$ -o ./joblog.$JOB_ID.txt                   #set the job log output file
+#$ -j y                                      #set error = Merged with joblog
+#$ -l h_rt=1:00:00,h_data=3G      #specify requested resources (h_rt gives time request in 'hrs:mins:secs' format) (h_data specifies requested RAM per task) (highp=TRUE means run it on Aguillon Lab owned nodes)
+#$ -pe shared 10                              #specify number of CPUs requested
+
+#load necessary modules
+. /u/local/Modules/default/init/modules.sh
+#load plink #(v1.90b6.24)
+module load plink/1.90b624
+
+#use plink to convert vcf directly to bed format:
+plink --vcf grosbeak.filtered.unlinked.snps.vcf --double-id --allow-extra-chr --make-bed --out binary_fileset
+#fix chromosome names
+cut -f2- binary_fileset.bim  > temp
+awk 'BEGIN{FS=OFS="\t"}{print value 1 OFS $0}' temp > binary_fileset.bim
+
+#run admixture for a K of 1-10, using cross-validation, with 10 threads
+for K in 1 2 3 4 5 6 7 8 9 10; 
+do /u/project/aguillon/shared_bin/admixture_linux-1.3.0/admixture --cv -j10 binary_fileset.bed $K | tee log${K}.out;
+done
+
+#Which K iteration is optimal according to ADMIXTURE ?
+grep -h CV log*.out > log.errors.txt
+```
+
+
+### Assess the best run based on cross-validation
+```{r}
+#Now copy your entire admixture directory into your local machine, in bash, using a command like this:
+#scp -r dderaad@dtn.hoffman2.idre.ucla.edu:/u/project/aguillon/dderaad/grosbeak.rad/admixture /Users/devonderaad/Desktop/grosbeak.rad/
+
+#read in ADMIXTURE results to R
+#setwd to the admixture directory you brought in from the cluster
+setwd("~/Desktop/grosbeak.rad/admixture")
+
+#read in log error values to determine optimal K
+log<-read.table("log.errors.txt")[,c(3:4)]
+#use double backslash to interpret the opening parentheses literally in the regular expression
+log$V3<-gsub("\\(K=", "", log$V3)
+log$V3<-gsub("):", "", log$V3)
+#interpret K values as numerical
+log$V3<-as.numeric(log$V3)
+#rename columns
+colnames(log)<-c("Kvalue","cross.validation.error")
+
+#make plot showing the cross validation error across K values 1:10
+ggplot(data=log, aes(x=Kvalue, y=cross.validation.error, group=1)) +
+  geom_line(linetype = "dashed")+
+  geom_point()+
+  ylab("cross-validation error")+
+  xlab("K")+
+  scale_x_continuous(breaks = c(1:10))+
+  theme_classic()
+#lowest CV value is the ideal K value
+```
+
+
+### Visualize results as bar charts
+```{r}
+#setwd to the admixture directory you brought in from the cluster
+setwd("~/Desktop/grosbeak.rad/admixture")
+
+#read in input file
+sampling<-read.table("binary_fileset.fam")[,1]
+#get list of input samples in order they appear
+sampling
+
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:10){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+
+#plot runs 1:5
+par(mfrow=c(1,1))
+for (i in 1:5){
+barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
+}
+
+#isolate run 2 (best according to CV)
+run2<-runs[[2]]
+#add sample info in the correct order (same as input vcf)
+run2$sample<-colnames(v@gt)[-1]
+
+#read in sample data
+#read in locality and mito info
+samps<-read.csv("~/Desktop/grosbeak.data.csv")
+samps<-samps[samps$passed.genomic.filtering == "TRUE",] #retain only samples that passed filtering
+samps$sample_id == run2$sample #check if sample info table order matches the vcf
+samps<-samps[match(run2$sample,samps$sample_id),] #use 'match' to match orders
+samps$sample_id == run2$sample #check if this worked
+
+#add q-values to the sampling data.frame now that orders match
+samps$lud.q<-run2$V1
+samps$mel.q<-run2$V2
+
+#reorder sample sheet by locality and then by q-value within each locality
+samps<-samps[order(samps$site, samps$lud.q),]
+
+#use the following info to construct a vector that splits the barplot by sampling site
+table(samps$site)
+
+#plot barplots organized based on sampling details
+barplot(t(as.matrix(samps[,c(40,41)])), col=c("#ef3b2c","#fff319"), ylab="Ancestry", border="black", names.arg=samps$site, cex.names=0.35,
+        space=c(0,rep(0, times=7),3,rep(0, times=18),3,
+                rep(0, times=2),3,rep(0, times=15),3,
+                rep(0, times=9),3,rep(0, times=3),3,
+                rep(0, times=7),3,rep(0, times=8),3,
+                rep(0, times=9),3,rep(0, times=8),3,
+                rep(0, times=9),3,rep(0, times=22),3,
+                rep(0, times=8)))
+```
+
+### repeat with singletons removed
+```{r}
+#get vcf info
+v
+#must make chromosome names non-numeric for plink or it will throw an error
+v@fix[,1]<-paste("a", v@fix[,1], sep="")
+
+#make another file with no singletons
+v.x<-min_mac(v, min.mac = 2)
+#get info
+v.x
+
+#write to disk
+#vcfR::write.vcf(v.x, file="~/Desktop/grosbeak.rad/thinned.mac2.vcf.gz")
+
+#now move to the UCLA cluster (in a separate terminal window) like so:
+#scp /Users/devonderaad/Desktop/grosbeak.rad/thinned.mac2.vcf.gz dderaad@dtn.hoffman2.idre.ucla.edu:/u/project/aguillon/dderaad/grosbeak.rad/admixture.mac/
+```
+
+
+###Run admixture on the cluster
+```{bash, eval=FALSE}
+#### submit_job.sh START ####
+#!/bin/bash
+#$ -cwd
+#$ -o ./joblog.$JOB_ID.txt                   #set the job log output file
+#$ -j y                                      #set error = Merged with joblog
+#$ -l h_rt=1:00:00,h_data=3G      #specify requested resources (h_rt gives time request in 'hrs:mins:secs' format) (h_data specifies requested RAM per task) (highp=TRUE means run it on Aguillon Lab owned nodes)
+#$ -pe shared 10                              #specify number of CPUs requested
+
+#load necessary modules
+. /u/local/Modules/default/init/modules.sh
+#load plink #(v1.90b6.24)
+module load plink/1.90b624
+
+#use plink to convert vcf directly to bed format:
+plink --vcf thinned.mac2.vcf --double-id --allow-extra-chr --make-bed --out binary_fileset
+#fix chromosome names
+cut -f2- binary_fileset.bim  > temp
+awk 'BEGIN{FS=OFS="\t"}{print value 1 OFS $0}' temp > binary_fileset.bim
+
+#run admixture for a K of 1-10, using cross-validation, with 10 threads
+for K in 1 2 3 4 5 6 7 8 9 10; 
+do /u/project/aguillon/shared_bin/admixture_linux-1.3.0/admixture --cv -j10 binary_fileset.bed $K | tee log${K}.out;
+done
+
+#Which K iteration is optimal according to ADMIXTURE ?
+grep -h CV log*.out > log.errors.txt
+```
+
+### Assess the best run based on cross-validation
+```{r}
+#Now copy your entire admixture directory into your local machine, in bash, using a command like this:
+#scp -r dderaad@dtn.hoffman2.idre.ucla.edu:/u/project/aguillon/dderaad/grosbeak.rad/admixture.mac /Users/devonderaad/Desktop/grosbeak.rad/
+
+#read in ADMIXTURE results to R
+#setwd to the admixture directory you brought in from the cluster
+setwd("~/Desktop/grosbeak.rad/admixture.mac")
+
+#read in log error values to determine optimal K
+log<-read.table("log.errors.txt")[,c(3:4)]
+#use double backslash to interpret the opening parentheses literally in the regular expression
+log$V3<-gsub("\\(K=", "", log$V3)
+log$V3<-gsub("):", "", log$V3)
+#interpret K values as numerical
+log$V3<-as.numeric(log$V3)
+#rename columns
+colnames(log)<-c("Kvalue","cross.validation.error")
+
+#make plot showing the cross validation error across K values 1:10
+ggplot(data=log, aes(x=Kvalue, y=cross.validation.error, group=1)) +
+  geom_line(linetype = "dashed")+
+  geom_point()+
+  ylab("cross-validation error")+
+  xlab("K")+
+  scale_x_continuous(breaks = c(1:10))+
+  theme_classic()
+#lowest CV value is the ideal K value
+```
+
+### Visualize results as bar charts
+```{r}
+#setwd to the admixture directory you brought in from the cluster
+setwd("~/Desktop/grosbeak.rad/admixture.mac")
+
+#read in input file
+sampling<-read.table("binary_fileset.fam")[,1]
+#get list of input samples in order they appear
+sampling
+
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:10){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+
+#plot runs 1:5
+par(mfrow=c(1,1))
+for (i in 1:5){
+barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
+}
+
+#isolate run 2 (best according to CV)
+run2<-runs[[2]]
+#add sample info in the correct order (same as input vcf)
+run2$sample<-colnames(v@gt)[-1]
+
+#
+samps$sample_id == run2$sample #check if sample info table order matches the vcf
+samps<-samps[match(run2$sample,samps$sample_id),] #use 'match' to match orders
+samps$sample_id == run2$sample #check if this worked
+
+#add q-values to the sampling data.frame now that orders match
+samps$mac.lud.q<-run2$V1
+samps$mac.mel.q<-run2$V2
+
+#reorder sample sheet by locality and then by q-value within each locality
+samps<-samps[order(samps$site, samps$lud.q),]
+
+#use the following info to construct a vector that splits the barplot by sampling site
+table(samps$site)
+
+#plot barplots organized based on sampling details with MAC filter
+barplot(t(as.matrix(samps[,c(42,43)])), col=c("#ef3b2c","#fff319"), ylab="Ancestry", border="black", names.arg=samps$site, cex.names=0.35,
+        space=c(0,rep(0, times=7),3,rep(0, times=18),3,
+                rep(0, times=2),3,rep(0, times=15),3,
+                rep(0, times=9),3,rep(0, times=3),3,
+                rep(0, times=7),3,rep(0, times=8),3,
+                rep(0, times=9),3,rep(0, times=8),3,
+                rep(0, times=9),3,rep(0, times=22),3,
+                rep(0, times=8)))
+
+#plot barplots organized based on sampling details without MAC filter
+barplot(t(as.matrix(samps[,c(40,41)])), col=c("#ef3b2c","#fff319"), ylab="Ancestry", border="black", names.arg=samps$site, cex.names=0.35,
+        space=c(0,rep(0, times=7),3,rep(0, times=18),3,
+                rep(0, times=2),3,rep(0, times=15),3,
+                rep(0, times=9),3,rep(0, times=3),3,
+                rep(0, times=7),3,rep(0, times=8),3,
+                rep(0, times=9),3,rep(0, times=8),3,
+                rep(0, times=9),3,rep(0, times=22),3,
+                rep(0, times=8)))
+
+#check the correlation between singletons removed vs not
+plot(samps$lud.q,samps$mac.lud.q, pch=10, cex=1.5)
+abline(a=0, b=1)
+cor(samps$lud.q,samps$mac.lud.q)
+```
+
+
+### test for bimodality by site
+```{r}
+#across the transect
+hist(samps$lud.q, breaks = 50, main="Histogram of Ludovicianus ancestry (with singletons)",ylim=c(0,70))
+hist(samps$mac.lud.q, breaks = 50, main="Histogram of Ludovicianus ancestry (no singletons)",ylim=c(0,70))
+#try different bins (20)
+hist(samps$mac.lud.q, breaks = 20, main="Histogram of Ludovicianus ancestry (no singletons)",ylim=c(0,70))
+#try different bins (100)
+hist(samps$mac.lud.q, breaks = 100, main="Histogram of Ludovicianus ancestry (no singletons)",ylim=c(0,70))
+
+
+library(diptest)
+#Dip test to see if we can reject unimodality
+dip.test(samps$mac.lud.q, simulate.p.value = TRUE, B = 10000)
+dip.test(samps$lud.q, simulate.p.value = TRUE, B = 10000)
+
+#repeat for individual sites
+hist(samps$mac.lud.q[samps$site == 8], breaks = 10, main="Histogram of Ludovicianus ancestry at site 8 (no singletons)",xlim=c(0,1))
+#Dip test to see if we can reject unimodality
+dip.test(samps$mac.lud.q[samps$site == 8], simulate.p.value = TRUE, B = 10000)
+
+#repeat for individual sites
+hist(samps$mac.lud.q[samps$site == 9], breaks = 10, main="Histogram of Ludovicianus ancestry at site 9 (no singletons)",xlim=c(0,1))
+#Dip test to see if we can reject unimodality
+dip.test(samps$mac.lud.q[samps$site == 9], simulate.p.value = TRUE, B = 10000)
+
+#combine sites 8 & 9 (either side of the transition)
+hist(samps$mac.lud.q[samps$site == 8 | samps$site == 9], breaks = 20, main="Histogram of Ludovicianus ancestry sites 8&9 (no singletons)",xlim=c(0,1))
+#Dip test to see if we can reject unimodality
+dip.test(samps$mac.lud.q[samps$site == 8 | samps$site == 9], simulate.p.value = TRUE, B = 10000)
+
+#combine sites  7 - 9 (either side of the transition)
+hist(samps$mac.lud.q[samps$site == 8 | samps$site == 9 | samps$site == 7], breaks = 20, main="Histogram of Ludovicianus ancestry sites 7-9 (no singletons)",xlim=c(0,1))
+#Dip test to see if we can reject unimodality
+dip.test(samps$mac.lud.q[samps$site == 8 | samps$site == 9| samps$site == 7], simulate.p.value = TRUE, B = 10000)
+
+#combine sites  6 - 9 (either side of the transition)
+hist(samps$mac.lud.q[samps$site == 8 | samps$site == 9 | samps$site == 7 | samps$site == 6], breaks = 20, main="Histogram of Ludovicianus ancestry sites 7-9 (no singletons)",xlim=c(0,1))
+#Dip test to see if we can reject unimodality
+dip.test(samps$mac.lud.q[samps$site == 8 | samps$site == 9| samps$site == 7| samps$site == 6], simulate.p.value = TRUE, B = 10000)
+
+#combine sites  6 - 10 (either side of the transition)
+hist(samps$mac.lud.q[samps$site == 8 | samps$site == 9 | samps$site == 7 | samps$site == 6 | samps$site == 10], breaks = 20, main="Histogram of Ludovicianus ancestry sites 7-9 (no singletons)",xlim=c(0,1))
+#Dip test to see if we can reject unimodality
+dip.test(samps$mac.lud.q[samps$site == 8 | samps$site == 9| samps$site == 7| samps$site == 6 | samps$site == 10], simulate.p.value = TRUE, B = 10000)
+
+```
+
+### visualize mean ancestry across the transect (i.e., quick and dirty geographic cline)
+```{r}
+x<-c()
+for (i in 1:12){
+  x[i]<-mean(samps$mac.lud.q[samps$site == i])
+}
+x<-c(mean(samps$mac.lud.q[samps$site == 0]),x)
+plot(c(0:12),x)
+```
+
+
+### Make a cohesive figure summarizing these results for the paper
+```{r}
+layout(matrix(c(1,1,2,3), 2, 2, byrow = T))
+layout.show(n=3) 
+#plot barplots organized based on sampling details with MAC filter
+barplot(t(as.matrix(samps[,c(42,43)])), col=c("#ef3b2c","#fff319"), ylab="ludovicianus ancestry", border="black", names.arg=samps$site, cex.names=0.35,
+        space=c(0,rep(0, times=7),3,rep(0, times=18),3,
+                rep(0, times=2),3,rep(0, times=15),3,
+                rep(0, times=9),3,rep(0, times=3),3,
+                rep(0, times=7),3,rep(0, times=8),3,
+                rep(0, times=9),3,rep(0, times=8),3,
+                rep(0, times=9),3,rep(0, times=22),3,
+                rep(0, times=8)))
+
+#histogram from the entire transect
+hist(samps$mac.lud.q, breaks = 50, xlab="ludovicianus ancestry (all sites)", main=NULL)
+#combine sites 8 & 9 (either side of the transition)
+hist(samps$mac.lud.q[samps$site == 8 | samps$site == 9], breaks = 25, xlab="ludovicianus ancestry (sites 8 & 9)", xlim=c(0,1), main=NULL)
+
+#run dip tests to see if we can reject unimodality for the two histograms
+#all sites:
+dip.test(samps$mac.lud.q, simulate.p.value = FALSE)
+#sites 8&9:
+dip.test(samps$mac.lud.q[samps$site == 8 | samps$site == 9], simulate.p.value = FALSE)
+
+## 1. Open a pdf file
+#pdf("~/Desktop/grosbeak.rad/admixture.hists.pdf", width=9, height=6.5) 
+## 2. Create a plot
+layout(matrix(c(1,1,2,3), 2, 2, byrow = T))
+#plot barplots organized based on sampling details with MAC filter
+barplot(t(as.matrix(samps[,c(42,43)])), col=c("#ef3b2c","#fff319"), ylab="ludovicianus ancestry", border="black", names.arg=samps$site, cex.names=0.35,
+        space=c(0,rep(0, times=7),3,rep(0, times=18),3,
+                rep(0, times=2),3,rep(0, times=15),3,
+                rep(0, times=9),3,rep(0, times=3),3,
+                rep(0, times=7),3,rep(0, times=8),3,
+                rep(0, times=9),3,rep(0, times=8),3,
+                rep(0, times=9),3,rep(0, times=22),3,
+                rep(0, times=8)))
+
+#histogram from the entire transect
+hist(samps$mac.lud.q, breaks = 50, xlab="ludovicianus ancestry (all sites)", main=NULL)
+#combine sites 8 & 9 (either side of the transition)
+hist(samps$mac.lud.q[samps$site == 8 | samps$site == 9], breaks = 25, xlab="ludovicianus ancestry (sites 8 & 9)", xlim=c(0,1), main=NULL)
+## 3. Close the pdf file
+#dev.off()
+```
+
