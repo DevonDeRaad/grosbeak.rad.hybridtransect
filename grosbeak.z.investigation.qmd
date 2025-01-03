@@ -1,0 +1,337 @@
+---
+title: "grosbeak investigate Z chromosome"
+format:
+  html:
+    code-fold: show
+    code-tools: true
+toc: true
+toc-title: Document Contents
+number-sections: true
+embed-resources: true
+---
+
+### Investigate genotype patterns in hybrids
+```{r}
+library(triangulaR)
+library(vcfR)
+library(ggplot2)
+library(reshape2)
+library(adegenet)
+library(StAMPP)
+
+#read in data
+v<-read.vcfR("~/Desktop/grosbeak.rad/grosbeak.filtered.snps.vcf.gz")
+v
+colnames(v@gt)
+#read in sampling dataframe
+samps<-read.csv("~/Desktop/grosbeak.data.csv")
+samps<-samps[samps$passed.genomic.filtering == "TRUE",]
+#make popmap
+pm<-data.frame(id=samps$sample_id,pop=c(rep("P1", times=9),rep("P0",times=8),rep("hyb",times=121)))
+
+# Create a new vcfR object composed only of sites above the given allele frequency difference threshold
+fixed.vcf <- alleleFreqDiff(vcfR = v, pm = pm, p1 = "P0", p2 = "P1", difference = 1)
+# Calculate hybrid index and heterozygosity for each sample. Values are returned in a data.frame
+hi.het.test <- hybridIndex(vcfR = fixed.vcf, pm = pm, p1 = "P0", p2 = "P1")
+# View triangle plot
+triangulaR::triangle.plot(hi.het.test)
+#see where the fixed differences are coming from:
+table(fixed.vcf@fix[,1])
+#overwhelmingly, the fixed differences are coming from two scaffolds: "VZSJ01000457.1" (24) and "VZSJ01000270.1" (11). Let's look at the dynamics of those scaffolds:
+```
+
+### subset the data
+```{r}
+### plot without these two over-represented scaffolds included
+auto.fixed.vcf<-fixed.vcf[fixed.vcf@fix[,1] != "VZSJ01000457.1" & fixed.vcf@fix[,1] != "VZSJ01000270.1",]
+auto.fixed.vcf
+# Calculate hybrid index and heterozygosity for each sample. Values are returned in a data.frame
+hi.het.test <- hybridIndex(vcfR = auto.fixed.vcf, pm = pm, p1 = "P0", p2 = "P1")
+# View triangle plot
+triangulaR::triangle.plot(hi.het.test)
+
+### plot just those scaffolds
+z.fixed.vcf<-fixed.vcf[fixed.vcf@fix[,1] == "VZSJ01000457.1" | fixed.vcf@fix[,1] == "VZSJ01000270.1",]
+z.fixed.vcf
+# Calculate hybrid index and heterozygosity for each sample. Values are returned in a data.frame
+hi.het.test <- hybridIndex(vcfR = z.fixed.vcf, pm = pm, p1 = "P0", p2 = "P1")
+# View triangle plot
+triangulaR::triangle.plot(hi.het.test)
+hist(hi.het.test$heterozygosity)
+
+#make genotype plot for first scaffold
+test.only<-fixed.vcf[fixed.vcf@fix[,1] == "VZSJ01000457.1",]
+#isolate gt matrix
+gt<-as.data.frame(t(extract.gt(test.only)))
+gt$sample<-rownames(gt)
+dat3 <- melt(gt, id.var = 'sample')
+#plot
+ggplot(dat3, aes(variable, sample)) +
+  geom_tile(aes(fill = value), colour = "white") +
+  scale_fill_manual(values=c("lightpink", "red", "black")) +
+  theme(axis.text.y = element_text(size = 5))
+
+#repeat
+test.only<-fixed.vcf[fixed.vcf@fix[,1] == "VZSJ01000270.1",]
+#isolate gt matrix
+gt<-as.data.frame(t(extract.gt(test.only)))
+gt$sample<-rownames(gt)
+dat3 <- melt(gt, id.var = 'sample')
+#plot
+ggplot(dat3, aes(variable, sample)) +
+  geom_tile(aes(fill = value), colour = "white") +
+  scale_fill_manual(values=c("lightpink", "red", "black")) +
+  theme(axis.text.y = element_text(size = 5))
+
+#create sample sheet with Z chrom inversion state included
+zinv<-data.frame(id=colnames(test.only@gt)[-1],
+                 inv.state=c("RB","BH",rep("RB",4),"BH","het","BH",rep("het",3),
+                             rep("RB",13),"het",rep("RB",28),"backcrossed RB","RB","het",
+                             "RB","RB",rep("BH",17),"het",rep("BH",9),"het",
+                             rep("BH",46),"RB",rep("BH",4)))
+
+```
+The fact that all samples seem to be either completely homozygous or completely heterozygous for fixed differences on these scaffolds suggests that this is possibly an inversion, where the whole region is inherited as a haplotype with no recombination.
+These two plots are highly similar, suggesting that these two scaffolds are potentially linked. To assess this, I am going BLAST them to the chromosome assembled Zebra Finch reference genome.
+
+### blast results
+```{r}
+#Blasting > 100k base-pairs of each of these two interesting scaffolds against the Zebra Finch reference genome revealed highly significant hits for both scaffolds on the Z chromosome:
+knitr::include_graphics(c("/Users/devonderaad/Desktop/blast1.png"))
+knitr::include_graphics(c("/Users/devonderaad/Desktop/blast2.png"))
+#the scaffolds span at least 4 Mb, from 59 Mb to 63 Mb on the Zebra finch Z scaffold, suggesting a large inversion present in the center of the Z chromosome for these two Pheucticus taxa
+```
+
+
+### make trees from the putative inverted region
+```{r}
+#Isolate Z
+z.only<-v[v@fix[,1] == "VZSJ01000457.1" | v@fix[,1] == "VZSJ01000270.1",]
+#get info for this dataset
+z.only
+#z.only<-min_mac(z.only,2)
+#convert to genlight
+gen<-vcfR2genlight(z.only)
+#fix sample names to fit in <= 10 characters
+gen@ind.names
+gen@ind.names<-gsub("P_hybrid_","hyb", gen@ind.names)
+gen@ind.names<-gsub("P_ludovicianus_","lud", gen@ind.names)
+gen@ind.names<-gsub("P_melanocephalus_","mel", gen@ind.names)
+gen@ind.names
+pop(gen)<-gen@ind.names
+#assign populations (a StaMPP requirement)
+gen@pop<-as.factor(gen@ind.names)
+#generate pairwise divergence matrix
+sample.div <- stamppNeisD(gen, pop = FALSE)
+#export for splitstree
+#stamppPhylip(distance.mat=sample.div, file="~/Desktop/grosbeak.rad/z.only.splits.txt")
+library(poppr)
+ploidy(gen)<-2
+genetic_distance_matrix <- poppr::bitwise.dist(gen, mat = TRUE)
+#plot the two approaches to calculating genetic divergence
+plot(nj(genetic_distance_matrix), type="unrooted")
+plot(nj(sample.div), type="unrooted")
+
+#both trees show the expected pattern (three discrete clusters)
+```
+
+### add genomic ancestry info to dataframe
+```{r}
+#read in admixture results
+#setwd to the admixture directory you brought in from the cluster
+setwd("~/Desktop/grosbeak.rad/admixture.mac")
+
+#read in input file
+sampling<-read.table("binary_fileset.fam")[,1]
+#get list of input samples in order they appear
+sampling
+
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:10){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+
+#isolate run 2 (best according to CV)
+run2<-runs[[2]]
+#add sample info in the correct order (same as input vcf)
+run2$sample<-colnames(v@gt)[-1]
+
+#reorder
+samps$sample_id == run2$sample #check if sample info table order matches the vcf
+samps<-samps[match(run2$sample,samps$sample_id),] #use 'match' to match orders
+samps$sample_id == run2$sample #check if this worked
+
+#add q-values to the sampling data.frame now that orders match
+samps$mac.lud.q<-run2$V1
+samps$mac.mel.q<-run2$V2
+
+#check to see that order matches with the z-inversion dataframe I made above
+samps$sample_id == zinv$id #check if this worked
+#if all above are true, add in z-inversion haplotype to the dataframe
+samps$zinv.hap<-zinv$inv.state
+```
+
+### assess inversion dynamics
+```{r}
+#how does genomic ancestry correspond to inversion haplotype in females
+hist(samps$mac.mel.q[samps$zinv.hap == "BH" & samps$sex == "female"], breaks=50)
+hist(samps$mac.mel.q[samps$zinv.hap == "RB" & samps$sex == "female"], breaks=50)
+
+#what about in males?
+hist(samps$mac.mel.q[samps$zinv.hap == "BH" & samps$sex == "male"], breaks=50)
+hist(samps$mac.mel.q[samps$zinv.hap == "RB" & samps$sex == "male"], breaks=50)
+hist(samps$mac.mel.q[samps$zinv.hap == "het"], breaks=50)
+
+#how does mitochondrial ancestry correspond to inversion haplotype in females
+samps$mtDNA[samps$zinv.hap == "BH" & samps$sex == "female"]
+samps$mtDNA[samps$zinv.hap == "RB" & samps$sex == "female"]
+
+#how does mitochondrial ancestry correspond to inversion haplotype in females
+samps$mtDNA[samps$zinv.hap == "BH" & samps$sex == "male"]
+samps$mtDNA[samps$zinv.hap == "RB" & samps$sex == "male"]
+samps$mtDNA[samps$zinv.hap == "het" & samps$sex == "male"]
+
+#how does genomic ancestry correspond to mitochondrial haplotype in females
+hist(samps$mac.mel.q[samps$mtDNA == 0 & samps$sex == "female"], breaks=50)
+hist(samps$mac.mel.q[samps$mtDNA == 1 & samps$sex == "female"], breaks=50)
+
+#how does genomic ancestry correspond to mitochondrial haplotype in males
+hist(samps$mac.mel.q[samps$mtDNA == 0 & samps$sex == "male"], breaks=50)
+hist(samps$mac.mel.q[samps$mtDNA == 1 & samps$sex == "male"], breaks=50)
+
+#check out the one weird sample with 50/50 ancestry, 50/50 phenotype, RB Z inversion and BH mtDNA
+samps[samps$zinv.hap == "RB" & samps$mtDNA == 1,]
+
+#check out the samples with het z inversions
+samps[samps$zinv.hap == "het",]
+
+#check out the female samples
+samps[samps$sex == "female",]
+
+#is male phenotype associated with z inversion haplotype?
+hist(samps$male.total[samps$zinv.hap == "RB"])
+hist(samps$male.total[samps$zinv.hap == "BH"])
+
+#is male phenotype associated with mtDNA haplotype
+hist(samps$male.total[samps$mtDNA == 0])
+hist(samps$male.total[samps$mtDNA == 1])
+
+#is phenotype associated with genomic ancestry
+plot(samps$mac.lud.q[samps$sex == "male"], samps$male.total[samps$sex == "male"])
+plot(samps$mac.lud.q[samps$sex == "female"], samps$female.total[samps$sex == "female"])
+
+#how frequent is genomic versus phenotypic intermediacy?
+table(samps$male.total)
+table(round(samps$mac.lud.q, 2))
+
+#what proportion of samples are detectably admixed?
+table(samps$mac.lud.q > 0.02 & samps$mac.lud.q < 0.98)
+table(samps$mac.lud.q > 0.05 & samps$mac.lud.q < 0.95)
+
+#what sites are those detectably admixed samples from
+table(samps$site[samps$mac.lud.q > 0.02 & samps$mac.lud.q < 0.98])
+table(samps$site[samps$mac.lud.q > 0.05 & samps$mac.lud.q < 0.95])
+table(samps$site)
+```
+
+Both mitochondrial ancestry and Z-chromosome inversion haplotype are tightly associated with genomic ancestry. Interestingly, being heterozygous for the Z-chromosome inversion appears to be OK, and the samples that are het are spread across the transect and across the ancestry distribution. But you never see a sample with mismatched major parent ancestry and homozygous Z inversion (excluding the one 49.9/50.1 sample). Similarly, you only see one really mismatched major parent mitochondrial combination.
+
+### plot the divergence landscape
+```{r}
+#check how genotypes are encoded
+table(extract.gt(v))
+#extract genotype matrix
+gtmat<-as.data.frame(extract.gt(v))
+#recode matrix
+gtmat[gtmat == "0/0"]<-0
+gtmat[gtmat == "0/1"]<-1
+gtmat[gtmat == "1/1"]<-2
+
+#make sure order matches between sample sheet and genotype matrix
+colnames(gtmat) == samps$sample_id
+
+#open up an empty vector to hold FST results
+FST<-c()
+
+#Use a for loop to calculate FST for each SNP in the genotype matrix
+for(i in 1:nrow(gtmat)){
+  #calc HT
+    #q-bar = global derived allele frequency
+    qbar<-sum(as.numeric(gtmat[i,samps$site == 0 | samps$site == 12]), na.rm = T)/(2*sum(!is.na(gtmat[i,samps$site == 0 | samps$site == 12])))
+    
+    #insert if statement to catch if the SNP has no variation present among the pops of interest
+    if(qbar == 0 | qbar == 1){FST[i]<-"no variation"}
+    else{
+      
+    #p-bar = global reference allele frequency
+    pbar<-((2*sum(!is.na(gtmat[i,samps$site == 0 | samps$site == 12]))) - sum(as.numeric(gtmat[i,samps$site == 0 | samps$site == 12]), na.rm = T)) / (2*sum(!is.na(gtmat[i,samps$site == 0 | samps$site == 12])))
+    
+    #HT = 2 * p-bar * q-bar
+    HT<-2*pbar*qbar
+
+  #calc HS
+    #calculate subpopulation allele frequencies 
+    #p0 = subpopulation 0 alternate allele frequency
+    p0<-sum(as.numeric(gtmat[i,samps$site == 0]), na.rm = T)/(2*sum(!is.na(gtmat[i,samps$site == 0])))
+    #p12 = subpopulation 12 alternate allele frequency
+    p12<-sum(as.numeric(gtmat[i,samps$site == 12]), na.rm = T)/(2*sum(!is.na(gtmat[i,samps$site == 12])))
+    #q0 = subpopulation 0 reference allele frequency
+    q0<-1-p0
+    #q12 = subpopulation 12 reference allele frequency
+    q12<-1-p12
+
+    #calculate expected heterozygosities
+    #Hexp1 = 1 - sum(p1^2 + q1^2)
+    Hexp0<-1 - sum(p0^2 + q0^2)
+    #Hexp2 = 1 - sum(p2^2 + q2^2)
+    Hexp12<-1 - sum(p12^2 + q12^2)
+
+    #HS = (Hexp1*N1 + Hexp2*N2)/Ntotal
+    HS<-((Hexp0*sum(!is.na(gtmat[i,samps$site == 0]))) + (Hexp12*sum(!is.na(gtmat[i,samps$site == 12])))) / (sum(!is.na(gtmat[i,samps$site == 0 | samps$site == 12])))
+
+  #calc and store overall FST for the given SNP
+    #FST = (HT-HS)/HT
+    FST[i]<-(HT-HS)/HT
+    }
+}
+
+#quick double check that results make sense
+table(FST == "no variation") #less than half of SNPs are actually variable (i.e., MAC > 0)
+table(FST)
+#make dataframe
+FST.dataframe<-data.frame(chrom=v@fix[,1],pos=v@fix[,2],FST=FST)
+#isolate variable SNPs
+FST.dataframe<-FST.dataframe[FST.dataframe$FST != "no variation",]
+head(FST.dataframe)
+#make numeric
+FST.dataframe$FST<-as.numeric(FST.dataframe$FST)
+head(FST.dataframe)
+
+#plot histogram of FST
+hist(FST.dataframe$FST)
+#plot divergence landscape
+plot(1:nrow(FST.dataframe), FST.dataframe$FST, cex=0.1, pch=19)
+plot(1:nrow(FST.dataframe), FST.dataframe$FST, cex=0.1, pch=19, col=as.factor(FST.dataframe$chrom))
+palette(c("grey","black"))
+plot(1:nrow(FST.dataframe), FST.dataframe$FST, cex=0.1, pch=19, col=as.factor(FST.dataframe$chrom))
+
+#explore
+r1<-with(FST.dataframe, tapply(FST, chrom, mean))
+hist(r1)
+r1[r1 > .5]
+hist(table(FST.dataframe$chrom), breaks=100)
+table(FST.dataframe$chrom[FST.dataframe$FST == 1])
+
+#check whether FST is elevated on the putative inversion chromosomes versus the rest of the genome
+mean(FST.dataframe$FST)
+mean(FST.dataframe$FST[FST.dataframe$chrom == "VZSJ01000457.1"])
+mean(FST.dataframe$FST[FST.dataframe$chrom == "VZSJ01000270.1"])
+#FST is clearly elevated on those chroms 
+
+
+#it seems like we don't really have the resolution to get a detailed look at the divergence landscape, which would probably require binning FST in sliding windows and better scaffolding. Best left for a future whole genome follow-up to assess how important the inversion is in separating hybrids and whether it is segregating within each pop at all.
+```
+
+
