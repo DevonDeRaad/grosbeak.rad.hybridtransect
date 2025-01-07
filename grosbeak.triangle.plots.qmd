@@ -1,0 +1,230 @@
+---
+title: "grosbeak triangle plot and associations"
+format:
+  html:
+    code-fold: show
+    code-tools: true
+toc: true
+toc-title: Document Contents
+number-sections: true
+embed-resources: true
+---
+
+### bring in data
+```{r}
+#| output: false
+library(triangulaR)
+library(vcfR)
+library(ggdist)
+library(ggExtra)
+#read in data
+v<-read.vcfR("~/Desktop/grosbeak.rad/grosbeak.filtered.snps.vcf.gz")
+```
+
+### make triangle plot
+```{r}
+v
+colnames(v@gt)
+#read in sampling dataframe
+samps<-read.csv("~/Desktop/grosbeak.data.csv")
+samps<-samps[samps$passed.genomic.filtering == "TRUE",]
+#make popmap
+pm<-data.frame(id=samps$sample_id,pop=c(rep("P1", times=9),rep("P0",times=8),rep("hyb",times=121)))
+
+# Create a new vcfR object composed only of sites above the given allele frequency difference threshold
+fixed.vcf <- alleleFreqDiff(vcfR = v, pm = pm, p1 = "P1", p2 = "P0", difference = 1)
+# Calculate hybrid index and heterozygosity for each sample. Values are returned in a data.frame
+hi.het.test <- hybridIndex(vcfR = fixed.vcf, pm = pm, p1 = "P1", p2 = "P0")
+# View triangle plot
+triangulaR::triangle.plot(hi.het.test)
+
+#plot color-coded by mtDNA haplotype
+samps$sample_id == colnames(v@gt)[-1] #check if sample info table order matches the vcf
+samps<-samps[match(colnames(v@gt)[-1],samps$sample_id),] #use 'match' to match orders
+samps$sample_id == colnames(v@gt)[-1] #check if this worked
+
+colvec<-gsub("1","#fff319",gsub("0","#ef3b2c",samps$mtDNA))
+colvec[is.na(colvec)]<-"grey"
+
+hi.het.test$colvec<-colvec
+hi.het.test$mtDNA<-samps$mtDNA
+
+ggplot(hi.het.test, aes(x=hybrid.index, y=heterozygosity, color=as.factor(mtDNA))) +
+      geom_segment(aes(x = 0.5, xend = 1, y = 1, yend = 0), color = "black") +
+      geom_segment(aes(x = 0, xend = 0.5, y = 0, yend = 1), color = "black") +
+      geom_segment(aes(x = 0, xend = 1, y = 0, yend = 0), color = "black") +
+      stat_function(fun = function(hi) 2*hi*(1-hi), xlim = c(0,1), color = "black", linetype = "dashed") +
+      geom_point(cex = 3, alpha = 1)+
+      guides(shape = guide_legend(override.aes = list(size = 5), order=2, label.theme= element_text(face="italic")))+
+      xlab(paste("Hybrid Index"))+
+      ylab(paste("Interclass Heterozygosity"))+
+      labs(title = "") +
+      scale_color_manual(values = c("#ef3b2c","#fff319"),na.value = "grey") +
+      ylim(c(-0.05,1.05)) +
+      xlim(c(-0.05,1.05)) +
+      theme_classic()
+
+hi.het.test$site<-samps$site
+
+ggplot(hi.het.test, aes(x=hybrid.index, y=heterozygosity, color=as.factor(site))) +
+      geom_segment(aes(x = 0.5, xend = 1, y = 1, yend = 0), color = "black") +
+      geom_segment(aes(x = 0, xend = 0.5, y = 0, yend = 1), color = "black") +
+      geom_segment(aes(x = 0, xend = 1, y = 0, yend = 0), color = "black") +
+      stat_function(fun = function(hi) 2*hi*(1-hi), xlim = c(0,1), color = "black", linetype = "dashed") +
+      geom_point(cex = 3, alpha = 1)+
+      guides(shape = guide_legend(override.aes = list(size = 5), order=2, label.theme= element_text(face="italic")))+
+      xlab(paste("Hybrid Index"))+
+      ylab(paste("Interclass Heterozygosity"))+
+      labs(title = "") +
+      #scale_color_manual(values = c("#ef3b2c","#fff319"),na.value = "grey") +
+      ylim(c(-0.05,1.05)) +
+      xlim(c(-0.05,1.05)) +
+      theme_classic()
+
+#save plot
+g<-ggplot(hi.het.test, aes(x=hybrid.index, y=heterozygosity, color=as.factor(mtDNA))) +
+      geom_segment(aes(x = 0.5, xend = 1, y = 1, yend = 0), color = "black") +
+      geom_segment(aes(x = 0, xend = 0.5, y = 0, yend = 1), color = "black") +
+      geom_segment(aes(x = 0, xend = 1, y = 0, yend = 0), color = "black") +
+      stat_function(fun = function(hi) 2*hi*(1-hi), xlim = c(0,1), color = "black", linetype = "dashed") +
+      geom_point(cex = 3, alpha = 1)+
+      guides(shape = guide_legend(override.aes = list(size = 5), order=2, label.theme= element_text(face="italic")))+
+      xlab(paste("Hybrid Index"))+
+      ylab(paste("Interclass Heterozygosity"))+
+      labs(title = "") +
+      scale_color_manual(values = c("#ef3b2c","#fff319"),na.value = "grey") +
+      ylim(c(-0.05,1.05)) +
+      xlim(c(-0.05,1.05)) +
+      theme_classic()
+#ggsave("~/Desktop/grosbeak.rad/triangle.plot.pdf", g, width = 6,height = 4,units = "in")
+
+```
+
+
+### plot associations
+```{r}
+#setwd to the admixture directory you brought in from the cluster
+setwd("~/Desktop/grosbeak.rad/admixture.mac")
+
+#read in input file
+sampling<-read.table("binary_fileset.fam")[,1]
+#get list of input samples in order they appear
+sampling
+
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:10){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+
+#isolate run 2 (best according to CV)
+run2<-runs[[2]]
+#add sample info in the correct order (same as input vcf)
+run2$sample<-colnames(v@gt)[-1]
+
+#
+samps$sample_id == run2$sample #check if sample info table order matches the vcf
+samps<-samps[match(run2$sample,samps$sample_id),] #use 'match' to match orders
+samps$sample_id == run2$sample #check if this worked
+
+#add q-values to the sampling data.frame now that orders match
+samps$mac.lud.q<-run2$V1
+samps$mac.mel.q<-run2$V2
+
+#plot
+ggplot(samps, aes(x=mac.mel.q, y=male.total/12, color=as.factor(mtDNA))) +
+      geom_point(cex = 3, alpha = 1)+
+      guides(shape = guide_legend(override.aes = list(size = 5), order=2, label.theme= element_text(face="italic")))+
+      xlab(paste("melanocephalus ancestry"))+
+      ylab(paste("melanocephalus phenotype"))+
+      labs(title = "") +
+      scale_color_manual(values = c("#ef3b2c","#fff319"),na.value = "grey") +
+      ylim(c(0,12)) +
+      scale_y_continuous(breaks=seq(0, 1, 1/4)) +
+      theme_classic()
+
+samps$male.prop<-samps$male.total/12
+#do linear regression
+phengen.lm <- lm(mac.mel.q ~ male.prop, samps)
+#print out the summary
+summary(phengen.lm)
+
+#plot with best fit linear regression line laid over
+p<-ggplot(samps, aes(x=mac.mel.q, y=male.prop, color=as.factor(mtDNA))) +
+      geom_point(cex = 3, alpha = 1)+
+      guides(shape = guide_legend(override.aes = list(size = 5), order=2, label.theme= element_text(face="italic")))+
+      xlab(paste("melanocephalus genomic ancestry"))+
+      ylab(paste("melanocephalus phenotype"))+
+      labs(title = "") +
+      scale_color_manual(values = c("#ef3b2c","#fff319"),na.value = "grey") +
+      #ylim(c(0,12)) +
+      scale_y_continuous(breaks=seq(0, 1, 1/4)) +
+      geom_abline(slope = coef(phengen.lm)[["male.prop"]], intercept = coef(phengen.lm)[["(Intercept)"]]) +
+      theme_classic()+
+      theme(legend.position="none")
+      
+ggMarginal(p, type = "histogram") 
+
+#save
+pp<-ggMarginal(p, type = "histogram") 
+#ggsave("~/Desktop/grosbeak.rad/geno.pheno.plot.pdf", pp, width = 4,height = 4,units = "in")
+
+```
+
+### 
+```{r}
+#plot
+ggplot(samps, aes(x=mtDNA, y=mac.mel.q, color=as.factor(mtDNA))) +
+      geom_point(cex = 3, alpha = 1) +
+      guides(shape = guide_legend(override.aes = list(size = 5), order=2, label.theme= element_text(face="italic")))+
+      xlab(paste("melanocephalus ancestry"))+
+      ylab(paste("melanocephalus phenotype"))+
+      labs(title = "") +
+      scale_color_manual(values = c("#ef3b2c","#fff319"),na.value = "grey") +
+      ylim(c(0,12)) +
+      scale_y_continuous(breaks=seq(0, 1, 1/4)) +
+      theme_classic()
+
+sub<-samps[!is.na(samps$mtDNA),]
+ggplot(sub, aes(x = as.factor(mtDNA), y = mac.mel.q, color=as.factor(mtDNA))) + 
+  ggdist::stat_halfeye(adjust = 10, width = .5, .width = 0, justification = -.3, point_colour = NA) + 
+  geom_boxplot(width = .25, outlier.shape = NA) +
+  geom_point(size = 1.5,alpha = .75,position = position_jitter(seed = 1, width = .02))+
+  scale_color_manual(values = c("#ef3b2c","#fff319"), aesthetics = c("fill", "color")) +
+  theme_classic()+
+  coord_cartesian(xlim = c(1.3, 2.2), clip = "off")
+
+#save
+gplot<-ggplot(sub, aes(x = as.factor(mtDNA), y = mac.mel.q, color=as.factor(mtDNA))) + 
+  ggdist::stat_halfeye(adjust = 15, width = .75, .width = 0, justification = -.3, point_colour = NA) + 
+  geom_boxplot(width = .25, outlier.shape = NA) +
+  geom_point(size = 1.5,alpha = .75,position = position_jitter(seed = 1, width = .02))+
+  scale_color_manual(values = c("#ef3b2c","#fff319"), aesthetics = c("fill", "color")) +
+  theme_classic()+
+  coord_cartesian(xlim = c(1.35, 2.3), clip = "off")+
+  theme(legend.position="none")
+
+#ggsave("~/Desktop/grosbeak.rad/mt.boxplot.plot.pdf", gplot, width = 4.2,height = 3.6,units = "in")
+
+#get info for a table showing relative frequency of mitonuclear discordance
+k<-c()
+for (i in 1:nrow(sub)){
+  if(sub$mtDNA[i] == 0 & sub$mac.lud.q[i] > .5){k[i]<-"ludo.ludo"}
+  else if(sub$mtDNA[i] == 0 & sub$mac.lud.q[i] < .5){k[i]<-"ludo.mel"}
+  else if(sub$mtDNA[i] == 1 & sub$mac.mel.q[i] > .5){k[i]<-"mel.mel"}
+  else if(sub$mtDNA[i] == 1 & sub$mac.mel.q[i] < .5){k[i]<-"mel.ludo"}
+}
+table(k)
+
+mean(sub$mac.mel.q[sub$mtDNA == 0])
+mean(sub$mac.mel.q[sub$mtDNA == 1])
+
+#check if discordant genotypes are still rare in the center of the hybrid zone
+table(k[sub$site == 7 | sub$site == 8])
+table(k[sub$site > 5 & sub$site < 10])
+chisq <- chisq.test(rbind(c(44,0),c(2,72)))
+chisq
+```
+
+
