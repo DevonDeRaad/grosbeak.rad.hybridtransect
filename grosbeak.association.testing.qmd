@@ -1,0 +1,123 @@
+---
+title: "grosbeak ancestry associations"
+format:
+  html:
+    code-fold: show
+    code-tools: true
+toc: true
+toc-title: Document Contents
+number-sections: true
+embed-resources: true
+---
+
+### Investigate genotype/phenotype associations
+```{r}
+library(ggplot2)
+library(ggExtra)
+#load dataset from publicly available repository
+samps<-read.csv("https://raw.githubusercontent.com/DevonDeRaad/grosbeak.rad.hybridtransect/refs/heads/main/data/grosbeak.sample.info.csv")
+
+#plot overall phenotype against ancestry for males
+#isolate samples with "male total phenotype score" (113 out of 138)
+male.tot<-samps[!is.na(samps$male.total),]
+#plot
+plot(male.tot$mac.mel.q,male.tot$male.total)
+plot(male.tot$mac.mel.q,male.tot$tarsus)
+plot(male.tot$mac.mel.q,male.tot$wing)
+plot(male.tot$mac.mel.q,male.tot$nape)
+plot(male.tot$mac.mel.q,male.tot$back)
+plot(male.tot$mac.mel.q,male.tot$rump)
+plot(male.tot$mac.mel.q,male.tot$breast.underwing.coverts)
+plot(male.tot$mac.mel.q,male.tot$flanks)
+
+```
+
+### Check to make sure that date collected is not strongly influencing testis size
+```{r}
+#subset to only males
+male<-samps[samps$sex == "male",]
+#with testis measurements
+male<-samps[!is.na(samps$Rtestiswidth),]
+
+#plot
+plot(male$day.year, male$total.testis.area)
+#calculate stats
+cor(male$day.year,male$total.testis.area)
+lm<-lm(total.testis.area ~ day.year, data = male)
+summary(lm)
+
+#plot with best fit linear regression line laid over
+p<-ggplot(male, aes(x=day.year, y=total.testis.area)) +
+      geom_point(cex = 3, alpha = .5)+
+      guides(shape = guide_legend(override.aes = list(size = 5), order=2, label.theme= element_text(face="italic")))+
+      xlab(paste("Day of the year (0 - 365)"))+
+      ylab(paste("Testis area"))+
+      labs(title = "") +
+      scale_color_manual(values = c("#ef3b2c","#fff319"),na.value = "grey") +
+      #ylim(c(0,12)) +
+      #scale_y_continuous(breaks=seq(0, 1, 1/4)) +
+      geom_abline(slope = coef(lm)[["day.year"]], intercept = coef(lm)[["(Intercept)"]]) +
+      theme_classic()+
+      theme(legend.position="none")
+      
+ggMarginal(p, type = "histogram") 
+
+#save
+pp<-ggMarginal(p, type = "histogram") 
+#ggsave("~/Desktop/grosbeak.rad/testis.date.plot.pdf", pp, width = 6,height = 4,units = "in")
+
+```
+
+### Now test for ancestry / testis area association
+```{r}
+#calculate 'minor parent ancestry'
+x<-c()
+for (i in 1:nrow(male)){
+  x[i]<-min(male$mac.lud.q[i],male$mac.mel.q[i])
+}
+hist(x, breaks=20)
+male$minor.ancestry<-x
+
+#plot the association between 'minor parent ancestry' (essentially admixture proportion) and testis size
+plot(male$minor.ancestry, male$total.testis.area)
+
+#try binning for hybrid vs not
+mean(male$total.testis.area[male$minor.ancestry <.02])
+mean(male$total.testis.area[male$minor.ancestry >.02])
+#try different cutoff
+mean(male$total.testis.area[male$minor.ancestry <.2])
+mean(male$total.testis.area[male$minor.ancestry >.2])
+
+#plot individual testis measurements
+plot(male$minor.ancestry, male$Ltestislength)
+plot(male$minor.ancestry, male$Ltestiswidth)
+plot(male$minor.ancestry, male$Rtestislength)
+plot(male$minor.ancestry, male$Rtestiswidth)
+
+#calculate stats
+cor(male$minor.ancestry,male$total.testis.area)
+lm<-lm(total.testis.area ~ minor.ancestry, data = male)
+summary(lm)
+
+#plot with best fit linear regression line laid over
+p<-ggplot(male, aes(x=minor.ancestry, y=total.testis.area)) +
+      geom_point(cex = 3, alpha = .5)+
+      guides(shape = guide_legend(override.aes = list(size = 5), order=2, label.theme= element_text(face="italic")))+
+      xlab(paste("Minor parent ancestry proportion"))+
+      ylab(paste("Testis area"))+
+      labs(title = "") +
+      scale_color_manual(values = c("#ef3b2c","#fff319"),na.value = "grey") +
+      #ylim(c(0,12)) +
+      #scale_y_continuous(breaks=seq(0, 1, 1/4)) +
+      geom_abline(slope = coef(lm)[["minor.ancestry"]], intercept = coef(lm)[["(Intercept)"]]) +
+      theme_classic()+
+      theme(legend.position="none")
+      
+ggMarginal(p, type = "histogram")
+
+#save
+pp<-ggMarginal(p, type = "histogram") 
+#ggsave("~/Desktop/grosbeak.rad/testis.ancestry.plot.pdf", pp, width = 6,height = 4,units = "in")
+
+```
+
