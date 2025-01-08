@@ -1,0 +1,280 @@
+---
+title: "grosbeak nls clines"
+format:
+  html:
+    code-fold: show
+    code-tools: true
+toc: true
+toc-title: Document Contents
+number-sections: true
+embed-resources: true
+---
+
+### get distance values (km) for the transect
+```{r}
+#this chunk is adapted from Aguillon et al., (2022) (link to code here: https://github.com/stepfanie-aguillon/flicker-HZ-movement-Evolution2022/blob/main/2_prep-scoring-data.R)
+
+
+# load packages
+library(tidyverse)
+library(nlstools)
+library(geosphere)
+library(sf)
+library(ggplot2)
+library(mapview)
+
+#load dataset from publicly available repository
+samps<-read.csv("https://raw.githubusercontent.com/DevonDeRaad/grosbeak.rad.hybridtransect/refs/heads/main/data/grosbeak.sample.info.csv")
+#subset to only samples passing genomic filtering protocols
+samps<-samps[samps$passed.genomic.filtering == "TRUE",] 
+
+#group dataset by site locality and historic/contemporary, summarize various aspects of each locale
+sub_summary <- samps %>%
+  group_by(site) %>%
+  summarize(samples=n(),
+            mtDNA_mean = mean(na.omit(mtDNA)),
+            mtDNA_se = sd(na.omit(mtDNA))/samples,
+            pheno_mean = mean(na.omit(male.total/12)),
+            pheno_se = sd(na.omit(male.total/12))/samples,
+            ancestry_mean = mean(na.omit(mac.mel.q)),
+            ancestry_se = sd(na.omit(mac.mel.q))/samples,
+            lat_mean = mean(na.omit(decimallatitude)),
+            long_mean = mean(na.omit(decimallongitude))) %>% 
+  arrange(site)
+#view the results
+head(sub_summary) #looks good - (DAD, 7 Jan 2025)
+
+#subset to only the SD transect since we don't have mtDNA and phenotype info for the anchor points
+sub_summary<-sub_summary[2:12,]
+
+# mean longitude values
+mlat = mean(sub_summary$lat_mean)
+
+# first locality
+# set up in longitude, latitude
+p1=c(sub_summary$long_mean[1],mlat)
+
+# for loop to work across all localities and calculate the distance
+# the loop calculates the distance between longitude values from each site using a mean latitude value
+# the loop then assigns this distance to the variable "distance"
+distance<-c()
+for(i in 1:nrow(sub_summary)){
+  distance[i] <- distm(p1,c(sub_summary$long_mean[i],mlat))/1000
+}
+distance
+
+#map the linearized transect to make sure that the distances are reasonable after being linearized
+sub_summary$mlat<-rep(mlat, times=11)
+
+mapview(sub_summary, xcol = "long_mean", ycol = "lat_mean", col.regions = c("blue"), crs = 4269, grid = FALSE) +
+  mapview(sub_summary, xcol = "long_mean", ycol = "mlat", col.regions = c("red"), crs = 4269, grid = FALSE)
+
+#add distance into the dataframe
+sub_summary<-sub_summary[,c(1:10)]
+sub_summary$dist<-distance
+```
+
+### evaluate mtDNA
+```{r}
+#This chunk is adapted from: https://github.com/stepfanie-aguillon/flicker-HZ-movement-Evolution2022/blob/main/3_nls-clines-scoring-data.R
+
+#define the function used to fit the sigmoidal curve
+# set 'maxval' = the maximum value of the measured trait
+maxval=1
+rhs <- function(x, c, w) {
+  maxval/(1+exp((4*(x-c))/w))
+}
+
+# for plotting bootstrap
+#s <- seq(0,800,length=100)
+
+### mtDNA
+# modelling the cline
+mtDNA_model <- nls(mtDNA_mean ~ rhs(dist, center, width),
+                   data=sub_summary,
+                   start=list(center=max(sub_summary$dist)/2,width=max(sub_summary$dist)/2),
+                   trace=T)
+
+# summarizing the output
+summary(mtDNA_model)
+summarymtdna<-summary(mtDNA_model)
+coef(mtDNA_model)
+
+# calculating a confidence interval
+#this approach fails to converge (not sure why), so instead we will use the bootstrapping approach to generate confidence intervals here
+#CI_mtDNA_model <- confint(mtDNA_model,parm=c("center","width"))
+#CI_mtDNA_model
+
+# bootstrapping the output
+bootstrap_CI_mtDNA_model <- nlsBoot(mtDNA_model,niter=999)
+summary(bootstrap_CI_mtDNA_model)
+hist(bootstrap_CI_mtDNA_model$coefboot[,1], breaks=50)
+hist(bootstrap_CI_mtDNA_model$coefboot[,2], breaks=50)
+
+#plot
+ggplot() +
+  geom_pointrange(data=sub_summary,aes(x=dist,y=mtDNA_mean,ymin=mtDNA_mean-mtDNA_se,ymax=mtDNA_mean+mtDNA_se),color="black",shape=16) +
+  geom_smooth(data=sub_summary, aes(x=dist,y=mtDNA_mean), method="nls", formula=y~1/(1+exp((4*(x-c))/w)), se=FALSE, method.args=list(start=list(c=max(sub_summary$dist)/2,w=max(sub_summary$dist)/2)), color="black") +
+  ylim(c(-0.01,1.3)) +
+  xlim(c(0,max(sub_summary$dist))) +
+  xlab("Distance (km)") +
+  ylab("Hybrid index") +
+  theme_classic() +
+  theme(axis.title=element_text(face="bold",size=12), axis.text=element_text(size=10,color="black"))+
+  geom_rect(aes(xmin = bootstrap_CI_mtDNA_model[["bootCI"]][1,2], xmax = bootstrap_CI_mtDNA_model[["bootCI"]][1,3], ymin = 1.1, ymax = 1.2), fill = NA, color = "black") + geom_segment(aes(x = summarymtdna$parameters[1,1], y = 1.1, yend = 1.2), color = "black", lwd = 1)
+```
+
+### evaluate genomic ancestry
+```{r}
+#define the function used to fit the sigmoidal curve
+# set 'maxval' = the maximum value of the measured trait
+maxval=1
+rhs <- function(x, c, w) {
+  maxval/(1+exp((4*(x-c))/w))
+}
+
+### genomic ancestry
+# modelling the cline
+ancestry_model <- nls(ancestry_mean ~ rhs(dist, center, width),
+                   data=sub_summary,
+                   start=list(center=max(sub_summary$dist)/2,width=max(sub_summary$dist)/2),
+                   trace=T)
+
+# summarizing the output
+summary(ancestry_model)
+summary_ancestry<-summary(ancestry_model)
+coef(ancestry_model)
+
+# calculating a confidence interval
+CI_ancestry_model <- confint(ancestry_model,parm=c("center","width"))
+CI_ancestry_model
+
+# bootstrapping the output
+bootstrap_CI_ancestry_model <- nlsBoot(ancestry_model,niter=999)
+summary(bootstrap_CI_ancestry_model)
+hist(bootstrap_CI_ancestry_model$coefboot[,1], breaks=50)
+hist(bootstrap_CI_ancestry_model$coefboot[,2], breaks=50)
+
+#plot
+ggplot() +
+  geom_pointrange(data=sub_summary,aes(x=dist,y=ancestry_mean,ymin=ancestry_mean-ancestry_se,ymax=ancestry_mean+ancestry_se),color="gray",shape=17) +
+  geom_smooth(data=sub_summary, aes(x=dist,y=ancestry_mean), method="nls", formula=y~1/(1+exp((4*(x-c))/w)), se=FALSE, method.args=list(start=list(c=max(sub_summary$dist)/2,w=max(sub_summary$dist)/2)), color="gray") +
+  ylim(c(-0.01,1.3)) +
+  xlim(c(0,max(sub_summary$dist))) +
+  xlab("Distance (km)") +
+  ylab("Hybrid index") +
+  theme_classic() +
+  theme(axis.title=element_text(face="bold",size=12), axis.text=element_text(size=10,color="black"))+
+  geom_rect(aes(xmin = CI_ancestry_model[1,1], xmax = CI_ancestry_model[1,2], ymin = 1.1, ymax = 1.2), fill = NA, color = "gray") + geom_segment(aes(x = summary_ancestry$parameters[1,1], y = 1.1, yend = 1.2), color = "gray", lwd = 1)
+```
+
+### evaluate phenotype
+```{r}
+#define the function used to fit the sigmoidal curve
+# set 'maxval' = the maximum value of the measured trait
+maxval=1
+rhs <- function(x, c, w) {
+  maxval/(1+exp((4*(x-c))/w))
+}
+
+### genomic ancestry
+# modelling the cline
+pheno_model <- nls(pheno_mean ~ rhs(dist, center, width),
+                   data=sub_summary,
+                   start=list(center=max(sub_summary$dist)/2,width=max(sub_summary$dist)/2),
+                   trace=T)
+
+# summarizing the output
+summary(pheno_model)
+summary_pheno<-summary(pheno_model)
+coef(pheno_model)
+
+# calculating a confidence interval
+CI_pheno_model <- confint(pheno_model,parm=c("center","width"))
+CI_pheno_model
+
+# bootstrapping the output
+bootstrap_CI_pheno_model <- nlsBoot(pheno_model,niter=999)
+summary(bootstrap_CI_pheno_model)
+hist(bootstrap_CI_pheno_model$coefboot[,1], breaks=50)
+hist(bootstrap_CI_pheno_model$coefboot[,2], breaks=50)
+
+#plot
+ggplot() +
+  geom_pointrange(data=sub_summary,aes(x=dist,y=pheno_mean,ymin=pheno_mean-pheno_se,ymax=pheno_mean+pheno_se),color="blue",shape=15) +
+  geom_smooth(data=sub_summary, aes(x=dist,y=pheno_mean), method="nls", formula=y~1/(1+exp((4*(x-c))/w)), se=FALSE, method.args=list(start=list(c=max(sub_summary$dist)/2,w=max(sub_summary$dist)/2)), color="blue") +
+  ylim(c(-0.01,1.3)) +
+  xlim(c(0,max(sub_summary$dist))) +
+  xlab("Distance (km)") +
+  ylab("Hybrid index") +
+  theme_classic() +
+  theme(axis.title=element_text(face="bold",size=12), axis.text=element_text(size=10,color="black"))+
+  geom_rect(aes(xmin = CI_pheno_model[1,1], xmax = CI_pheno_model[1,2], ymin = 1.1, ymax = 1.2), fill = NA, color = "blue") + geom_segment(aes(x = summary_pheno$parameters[1,1], y = 1.1, yend = 1.2), color = "blue", lwd = 1)
+```
+
+### plot them all over each other
+```{r}
+#plot
+ggplot() +
+  geom_pointrange(data=sub_summary,aes(x=dist,y=pheno_mean,ymin=pheno_mean-pheno_se,ymax=pheno_mean+pheno_se),color="blue",shape=15) +
+    geom_pointrange(data=sub_summary,aes(x=dist,y=ancestry_mean,ymin=ancestry_mean-ancestry_se,ymax=ancestry_mean+ancestry_se),color="gray",shape=16) +
+    geom_pointrange(data=sub_summary,aes(x=dist,y=mtDNA_mean,ymin=mtDNA_mean-mtDNA_se,ymax=mtDNA_mean+mtDNA_se),color="black",shape=17) +
+  geom_smooth(data=sub_summary, aes(x=dist,y=pheno_mean), method="nls", formula=y~1/(1+exp((4*(x-c))/w)), se=FALSE, method.args=list(start=list(c=max(sub_summary$dist)/2,w=max(sub_summary$dist)/2)), color="blue") +
+    geom_smooth(data=sub_summary, aes(x=dist,y=ancestry_mean), method="nls", formula=y~1/(1+exp((4*(x-c))/w)), se=FALSE, method.args=list(start=list(c=max(sub_summary$dist)/2,w=max(sub_summary$dist)/2)), color="gray") +
+  geom_smooth(data=sub_summary, aes(x=dist,y=mtDNA_mean), method="nls", formula=y~1/(1+exp((4*(x-c))/w)), se=FALSE, method.args=list(start=list(c=max(sub_summary$dist)/2,w=max(sub_summary$dist)/2)), color="black") +
+  ylim(c(-0.01,1.5)) +
+  xlim(c(0,max(sub_summary$dist))) +
+  xlab("Distance (km)") +
+  ylab("Hybrid index") +
+  theme_classic() +
+  theme(axis.title=element_text(size=12), axis.text=element_text(size=10,color="black"))+
+  geom_rect(aes(xmin = CI_pheno_model[1,1], xmax = CI_pheno_model[1,2], ymin = 1.1, ymax = 1.2), fill = NA, color = "blue") + geom_segment(aes(x = summary_pheno$parameters[1,1], y = 1.1, yend = 1.2), color = "blue", lwd = 1) +
+  geom_rect(aes(xmin = CI_ancestry_model[1,1], xmax = CI_ancestry_model[1,2], ymin = 1.22, ymax = 1.32), fill = NA, color = "gray") + geom_segment(aes(x = summary_ancestry$parameters[1,1], y = 1.22, yend = 1.32), color = "gray", lwd = 1) +
+  geom_rect(aes(xmin = bootstrap_CI_mtDNA_model[["bootCI"]][1,2], xmax = bootstrap_CI_mtDNA_model[["bootCI"]][1,3], ymin = 1.34, ymax = 1.44), fill = NA, color = "black") + geom_segment(aes(x = summarymtdna$parameters[1,1], y = 1.34, yend = 1.44), color = "black", lwd = 1)
+
+#plot
+ggplot() +
+  geom_pointrange(data=sub_summary,aes(x=dist,y=pheno_mean,ymin=pheno_mean-pheno_se,ymax=pheno_mean+pheno_se),color="blue",shape=15) +
+    geom_pointrange(data=sub_summary,aes(x=dist,y=ancestry_mean,ymin=ancestry_mean-ancestry_se,ymax=ancestry_mean+ancestry_se),color="gray",shape=16) +
+    geom_pointrange(data=sub_summary,aes(x=dist,y=mtDNA_mean,ymin=mtDNA_mean-mtDNA_se,ymax=mtDNA_mean+mtDNA_se),color="black",shape=17) +
+  geom_smooth(data=sub_summary, aes(x=dist,y=pheno_mean), method="nls", formula=y~1/(1+exp((4*(x-c))/w)), se=FALSE, method.args=list(start=list(c=max(sub_summary$dist)/2,w=max(sub_summary$dist)/2)), color="blue") +
+    geom_smooth(data=sub_summary, aes(x=dist,y=ancestry_mean), method="nls", formula=y~1/(1+exp((4*(x-c))/w)), se=FALSE, method.args=list(start=list(c=max(sub_summary$dist)/2,w=max(sub_summary$dist)/2)), color="gray") +
+  geom_smooth(data=sub_summary, aes(x=dist,y=mtDNA_mean), method="nls", formula=y~1/(1+exp((4*(x-c))/w)), se=FALSE, method.args=list(start=list(c=max(sub_summary$dist)/2,w=max(sub_summary$dist)/2)), color="black") +
+  ylim(c(-0.01,1.5)) +
+  xlim(c(0,max(sub_summary$dist))) +
+  xlab("Distance (km)") +
+  ylab("Hybrid index") +
+  theme_classic() +
+  theme(axis.title=element_text(size=12), axis.text=element_text(size=10,color="black"))+
+  geom_segment(aes(x = CI_pheno_model[1,1], xend= CI_pheno_model[1,2], y = 1.1), color = "blue", lwd = 1)+
+  geom_point(aes(x = summary_pheno$parameters[1,1], y = 1.1), color = "blue", shape=15, cex=2) +
+  geom_segment(aes(x = CI_ancestry_model[1,1], xend= CI_ancestry_model[1,2], y = 1.2), color = "gray", lwd = 1)+
+  geom_point(aes(x = summary_ancestry$parameters[1,1], y = 1.2), color = "gray", shape=16, cex=2) +
+  geom_segment(aes(x = bootstrap_CI_mtDNA_model[["bootCI"]][1,2], xend= bootstrap_CI_mtDNA_model[["bootCI"]][1,3], y = 1.3), color = "black", lwd = 1)+
+  geom_point(aes(x=summarymtdna$parameters[1,1], y=1.298), colour="black", shape=17, cex=2)
+
+pp<-#plot
+ggplot() +
+  geom_pointrange(data=sub_summary,aes(x=dist,y=pheno_mean,ymin=pheno_mean-pheno_se,ymax=pheno_mean+pheno_se),color="blue",shape=15) +
+    geom_pointrange(data=sub_summary,aes(x=dist,y=ancestry_mean,ymin=ancestry_mean-ancestry_se,ymax=ancestry_mean+ancestry_se),color="gray",shape=16) +
+    geom_pointrange(data=sub_summary,aes(x=dist,y=mtDNA_mean,ymin=mtDNA_mean-mtDNA_se,ymax=mtDNA_mean+mtDNA_se),color="black",shape=17) +
+  geom_smooth(data=sub_summary, aes(x=dist,y=pheno_mean), method="nls", formula=y~1/(1+exp((4*(x-c))/w)), se=FALSE, method.args=list(start=list(c=max(sub_summary$dist)/2,w=max(sub_summary$dist)/2)), color="blue") +
+    geom_smooth(data=sub_summary, aes(x=dist,y=ancestry_mean), method="nls", formula=y~1/(1+exp((4*(x-c))/w)), se=FALSE, method.args=list(start=list(c=max(sub_summary$dist)/2,w=max(sub_summary$dist)/2)), color="gray") +
+  geom_smooth(data=sub_summary, aes(x=dist,y=mtDNA_mean), method="nls", formula=y~1/(1+exp((4*(x-c))/w)), se=FALSE, method.args=list(start=list(c=max(sub_summary$dist)/2,w=max(sub_summary$dist)/2)), color="black") +
+  ylim(c(-0.01,1.5)) +
+  xlim(c(0,max(sub_summary$dist))) +
+  xlab("Distance (km)") +
+  ylab("Hybrid index") +
+  theme_classic() +
+  theme(axis.title=element_text(size=12), axis.text=element_text(size=10,color="black"))+
+  geom_segment(aes(x = CI_pheno_model[1,1], xend= CI_pheno_model[1,2], y = 1.1), color = "blue", lwd = 1)+
+  geom_point(aes(x = summary_pheno$parameters[1,1], y = 1.1), color = "blue", shape=15, cex=2) +
+  geom_segment(aes(x = CI_ancestry_model[1,1], xend= CI_ancestry_model[1,2], y = 1.2), color = "gray", lwd = 1)+
+  geom_point(aes(x = summary_ancestry$parameters[1,1], y = 1.2), color = "gray", shape=16, cex=2) +
+  geom_segment(aes(x = bootstrap_CI_mtDNA_model[["bootCI"]][1,2], xend= bootstrap_CI_mtDNA_model[["bootCI"]][1,3], y = 1.3), color = "black", lwd = 1)+
+  geom_point(aes(x=summarymtdna$parameters[1,1], y=1.298), colour="black", shape=17, cex=2)
+
+#ggsave("~/Desktop/grosbeak.rad/cline.plot.pdf",pp,width=6,height=4,units="in")
+```
+
+
