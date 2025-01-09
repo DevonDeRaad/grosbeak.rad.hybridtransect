@@ -93,6 +93,7 @@ rhs <- function(x, c, w) {
 mtDNA_model <- nls(mtDNA_mean ~ rhs(dist, center, width),
                    data=sub_summary,
                    start=list(center=max(sub_summary$dist)/2,width=max(sub_summary$dist)/2),
+                   control = list(maxiter = 500),
                    trace=T)
 
 # summarizing the output
@@ -102,14 +103,14 @@ coef(mtDNA_model)
 
 # calculating a confidence interval
 #this approach fails to converge (not sure why), so instead we will use the bootstrapping approach to generate confidence intervals here
-#CI_mtDNA_model <- confint(mtDNA_model,parm=c("center","width"))
-#CI_mtDNA_model
+CI_mtDNA_model <- confint(mtDNA_model,parm=c("center","width"))
+CI_mtDNA_model
 
-# bootstrapping the output
-bootstrap_CI_mtDNA_model <- nlsBoot(mtDNA_model,niter=999)
-summary(bootstrap_CI_mtDNA_model)
-hist(bootstrap_CI_mtDNA_model$coefboot[,1], breaks=50)
-hist(bootstrap_CI_mtDNA_model$coefboot[,2], breaks=50)
+# no need to bootstrap here
+#bootstrap_CI_mtDNA_model <- nlsBoot(mtDNA_model,niter=999)
+#summary(bootstrap_CI_mtDNA_model)
+#hist(bootstrap_CI_mtDNA_model$coefboot[,1], breaks=50)
+#hist(bootstrap_CI_mtDNA_model$coefboot[,2], breaks=50)
 
 #plot
 ggplot() +
@@ -121,7 +122,7 @@ ggplot() +
   ylab("Hybrid index") +
   theme_classic() +
   theme(axis.title=element_text(face="bold",size=12), axis.text=element_text(size=10,color="black"))+
-  geom_rect(aes(xmin = bootstrap_CI_mtDNA_model[["bootCI"]][1,2], xmax = bootstrap_CI_mtDNA_model[["bootCI"]][1,3], ymin = 1.1, ymax = 1.2), fill = NA, color = "black") + geom_segment(aes(x = summarymtdna$parameters[1,1], y = 1.1, yend = 1.2), color = "black", lwd = 1)
+  geom_rect(aes(xmin = CI_mtDNA_model[1,1], xmax = CI_mtDNA_model[1,2], ymin = 1.1, ymax = 1.2), fill = NA, color = "black") + geom_segment(aes(x = summarymtdna$parameters[1,1], y = 1.1, yend = 1.2), color = "black", lwd = 1)
 ```
 
 ### evaluate genomic ancestry
@@ -138,6 +139,7 @@ rhs <- function(x, c, w) {
 ancestry_model <- nls(ancestry_mean ~ rhs(dist, center, width),
                    data=sub_summary,
                    start=list(center=max(sub_summary$dist)/2,width=max(sub_summary$dist)/2),
+                   control = list(maxiter = 500),
                    trace=T)
 
 # summarizing the output
@@ -150,10 +152,10 @@ CI_ancestry_model <- confint(ancestry_model,parm=c("center","width"))
 CI_ancestry_model
 
 # bootstrapping the output
-bootstrap_CI_ancestry_model <- nlsBoot(ancestry_model,niter=999)
-summary(bootstrap_CI_ancestry_model)
-hist(bootstrap_CI_ancestry_model$coefboot[,1], breaks=50)
-hist(bootstrap_CI_ancestry_model$coefboot[,2], breaks=50)
+#bootstrap_CI_ancestry_model <- nlsBoot(ancestry_model,niter=999)
+#summary(bootstrap_CI_ancestry_model)
+#hist(bootstrap_CI_ancestry_model$coefboot[,1], breaks=50)
+#hist(bootstrap_CI_ancestry_model$coefboot[,2], breaks=50)
 
 #plot
 ggplot() +
@@ -182,6 +184,7 @@ rhs <- function(x, c, w) {
 pheno_model <- nls(pheno_mean ~ rhs(dist, center, width),
                    data=sub_summary,
                    start=list(center=max(sub_summary$dist)/2,width=max(sub_summary$dist)/2),
+                   control = list(maxiter = 500),
                    trace=T)
 
 # summarizing the output
@@ -194,10 +197,10 @@ CI_pheno_model <- confint(pheno_model,parm=c("center","width"))
 CI_pheno_model
 
 # bootstrapping the output
-bootstrap_CI_pheno_model <- nlsBoot(pheno_model,niter=999)
-summary(bootstrap_CI_pheno_model)
-hist(bootstrap_CI_pheno_model$coefboot[,1], breaks=50)
-hist(bootstrap_CI_pheno_model$coefboot[,2], breaks=50)
+#bootstrap_CI_pheno_model <- nlsBoot(pheno_model,niter=999)
+#summary(bootstrap_CI_pheno_model)
+#hist(bootstrap_CI_pheno_model$coefboot[,1], breaks=50)
+#hist(bootstrap_CI_pheno_model$coefboot[,2], breaks=50)
 
 #plot
 ggplot() +
@@ -230,7 +233,7 @@ ggplot() +
   theme(axis.title=element_text(size=12), axis.text=element_text(size=10,color="black"))+
   geom_rect(aes(xmin = CI_pheno_model[1,1], xmax = CI_pheno_model[1,2], ymin = 1.1, ymax = 1.2), fill = NA, color = "blue") + geom_segment(aes(x = summary_pheno$parameters[1,1], y = 1.1, yend = 1.2), color = "blue", lwd = 1) +
   geom_rect(aes(xmin = CI_ancestry_model[1,1], xmax = CI_ancestry_model[1,2], ymin = 1.22, ymax = 1.32), fill = NA, color = "gray") + geom_segment(aes(x = summary_ancestry$parameters[1,1], y = 1.22, yend = 1.32), color = "gray", lwd = 1) +
-  geom_rect(aes(xmin = bootstrap_CI_mtDNA_model[["bootCI"]][1,2], xmax = bootstrap_CI_mtDNA_model[["bootCI"]][1,3], ymin = 1.34, ymax = 1.44), fill = NA, color = "black") + geom_segment(aes(x = summarymtdna$parameters[1,1], y = 1.34, yend = 1.44), color = "black", lwd = 1)
+  geom_rect(aes(xmin = CI_mtDNA_model[1,1], xmax = CI_mtDNA_model[1,2], ymin = 1.34, ymax = 1.44), fill = NA, color = "black") + geom_segment(aes(x = summarymtdna$parameters[1,1], y = 1.34, yend = 1.44), color = "black", lwd = 1)
 
 #plot
 ggplot() +
@@ -250,7 +253,7 @@ ggplot() +
   geom_point(aes(x = summary_pheno$parameters[1,1], y = 1.1), color = "blue", shape=15, cex=2) +
   geom_segment(aes(x = CI_ancestry_model[1,1], xend= CI_ancestry_model[1,2], y = 1.2), color = "gray", lwd = 1)+
   geom_point(aes(x = summary_ancestry$parameters[1,1], y = 1.2), color = "gray", shape=16, cex=2) +
-  geom_segment(aes(x = bootstrap_CI_mtDNA_model[["bootCI"]][1,2], xend= bootstrap_CI_mtDNA_model[["bootCI"]][1,3], y = 1.3), color = "black", lwd = 1)+
+  geom_segment(aes(x = CI_mtDNA_model[1,1], xend= CI_mtDNA_model[1,2], y = 1.3), color = "black", lwd = 1)+
   geom_point(aes(x=summarymtdna$parameters[1,1], y=1.298), colour="black", shape=17, cex=2)
 
 pp<-#plot
@@ -271,7 +274,7 @@ ggplot() +
   geom_point(aes(x = summary_pheno$parameters[1,1], y = 1.1), color = "blue", shape=15, cex=2) +
   geom_segment(aes(x = CI_ancestry_model[1,1], xend= CI_ancestry_model[1,2], y = 1.2), color = "gray", lwd = 1)+
   geom_point(aes(x = summary_ancestry$parameters[1,1], y = 1.2), color = "gray", shape=16, cex=2) +
-  geom_segment(aes(x = bootstrap_CI_mtDNA_model[["bootCI"]][1,2], xend= bootstrap_CI_mtDNA_model[["bootCI"]][1,3], y = 1.3), color = "black", lwd = 1)+
+  geom_segment(aes(x = CI_mtDNA_model[1,1], xend= CI_mtDNA_model[1,2], y = 1.3), color = "black", lwd = 1)+
   geom_point(aes(x=summarymtdna$parameters[1,1], y=1.298), colour="black", shape=17, cex=2)
 
 #ggsave("~/Desktop/grosbeak.rad/cline.plot.pdf",pp,width=6,height=4,units="in")
