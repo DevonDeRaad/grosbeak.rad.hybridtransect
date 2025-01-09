@@ -1,0 +1,607 @@
+---
+title: "BGCHM vignette"
+format:
+  html:
+    code-fold: show
+    code-tools: true
+toc: true
+toc-title: Document Contents
+number-sections: true
+embed-resources: true
+---
+
+### Load packages and read in raw data
+```{r}
+#| output: false
+#load libraries
+library(vcfR)
+library(bgchm)
+library(SNPfiltR)
+library(reshape2)
+#read in vcf
+example.vcf<-read.vcfR("~/Desktop/grosbeak.filtered.snps.vcf.gz")
+```
+
+### Transform SNP data currently in vcf format into the set of matrices required for bgchm input
+```{r}
+#check out the data present in the vcf
+example.vcf
+
+#
+##
+### Step 1: isolate the genotype matrix from your vcf
+##
+#
+#extract the genotype data as a matrix from the vcf, using the vcfR function 'extract.gt()'
+genotype.matrix<-extract.gt(example.vcf, element="GT")
+#check out the details
+genotype.matrix[1:5,1:5]
+#this gives you a genotype matrix where each row is labeled with the name of the SNP and each column is labeled with the name of the sample. Having each column labeled with the corresponding sample name is a requirement of the helper function below.
+
+
+
+#
+##
+### Step 2: check how genotypes are encoded and remove non-biallelic SNPs
+##
+#
+#you can check how genotypes are encoded in your vcf with the following code:
+table(genotype.matrix, useNA="always")
+#this information tells me that I have genotypes encoded as "0/0", "0/1", and "1/1"
+#this is arbitrary and dependent on your genotype caller, but it is important information to note for doing the file conversion
+
+#If there are non-biallelic SNPs (e.g., genotypes that are "0/2" or "2/2"), those can be removed by using the 'filter_biallelic()' function from the SNPfiltR package, like so:
+example.vcf<-filter_biallelic(example.vcf)
+#And then re-extract the genotype matrix from the vcf, this time including only biallelic SNPs
+genotype.matrix<-extract.gt(example.vcf, element="GT")
+#And you can ensure that this worked by re-running the following code:
+table(genotype.matrix, useNA="always")
+
+#
+##
+### Step 3
+##
+#
+#read in sample table that specifies which samples are parental versus from the hybrid transect
+#this one is available in a public github repository
+samps<-read.csv("https://raw.githubusercontent.com/DevonDeRaad/grosbeak.rad.hybridtransect/refs/heads/main/data/grosbeak.sample.info.csv")
+
+#isolate the popmap
+samps<-samps[,c(2,15)]
+samps$site[samps$site > 0 & samps$site < 12]<- "H"
+samps$site[samps$site == 0]<- "P0"
+samps$site[samps$site == 12]<- "P1"
+colnames(samps)<-c("ID","pop")
+table(samps$site)
+head(samps)
+
+#
+##
+### Step 4: use this helper function to convert your vcf into the appropriate format for bgchm input
+##
+#
+#This function requires as input: 1) a biallelic genotype matrix (easily extracted as shown above in Step 1), 2) a table designating each sample in the matrix as "P0", "P1", or "H" (following the "Parent0", "Parent1", and "Hybrid" designations expected by bgchm, details shown above in Step 3), 3) you to specify how genotypes are encoded in your input matrix (finding this information is simple using the example code provided above in Step 2), and 4) an optional cutoff for parental allele frequency difference required to retain a given SNP.
+
+
+
+#convert matrix to numeric
+conv.mat<-genotype.matrix
+conv.mat[conv.mat == "0/0"]<-0
+conv.mat[conv.mat == "0/1"]<-1
+conv.mat[conv.mat == "1/1"]<-2
+conv.mat<-as.data.frame(conv.mat)
+#convert to numeric
+for (i in 1:ncol(conv.mat)){
+  conv.mat[,i]<-as.numeric(as.character(conv.mat[,i]))
+}
+
+#isolate Parent0 allele frequencies from the matrix
+P0.af<-(rowSums(conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P0"]], na.rm=T)/(rowSums(is.na(conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P0"]]) == FALSE)))/2
+
+#repeat for P1 allele frequencies from the matrix
+P1.af<-(rowSums(conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P1"]], na.rm=T)/(rowSums(is.na(conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P1"]]) == FALSE)))/2
+table(P0.af > P1.af)
+
+### If you want to set an allele frequency difference threshold, do it here:
+#find fixed SNPs
+diff<-abs(P0.af - P1.af)
+hist(diff)
+#how many SNPs are fixed
+table(is.na(diff) == FALSE & diff == 1) #266
+#subset
+conv.mat<-conv.mat[is.na(diff) == FALSE & diff == 1,]
+
+#re-isolate Parent0 allele frequencies from the matrix
+P0.af<-(rowSums(conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P0"]], na.rm=T)/(rowSums(is.na(conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P0"]]) == FALSE)))/2
+
+#repeat for P1 allele frequencies from the matrix
+P1.af<-(rowSums(conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P1"]], na.rm=T)/(rowSums(is.na(conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P1"]]) == FALSE)))/2
+table(P0.af > P1.af)
+
+#see how often P0 is the derived allele
+table(P0.af > P1.af) #8195 times out of ~55k
+
+#write a logical test to convert alleles so that a single number represents one parental ancestry
+for (i in 1:nrow(conv.mat)){
+  #if 1 is the P0 allele, flip the encoding
+if(P0.af[i] > P1.af[i]){
+  #swap all '0' cells with '3'
+    conv.mat[i,][conv.mat[i,] == 0]<-3
+    #swap all '2' cells with '0'
+    conv.mat[i,][conv.mat[i,] == 2]<-0
+    #finally convert all '3' cells (originally 0) into '2'
+    conv.mat[i,][conv.mat[i,] == 3]<-2
+    #no need to touch hets
+}
+  else{
+    #0 is the P0 allele, and we will do nothing
+  }
+}
+
+#check if this worked
+#isolate Parent0 allele frequencies from the matrix
+P0.af<-(rowSums(conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P0"]], na.rm=T)/(rowSums(is.na(conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P0"]]) == FALSE)))/2
+
+#repeat for P1 allele frequencies from the matrix
+P1.af<-(rowSums(conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P1"]], na.rm=T)/(rowSums(is.na(conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P1"]]) == FALSE)))/2
+
+#this should now be all false
+table(P0.af > P1.af)
+
+#create 'GenHybrids' matrix (rows are samples and columns are SNPs, only hybrid samples included)
+#isolate hybrid samples
+hyb.mat<-conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "H"]]
+hyb.mat<-t(as.matrix(hyb.mat))
+
+#create 'ploidy.mat', an object that tells bgchm the ploidy of each genotype (called genotypes encoded as '2', missing genotypes encoded as '0')
+hyb.ploidy.mat<-hyb.mat
+hyb.ploidy.mat[!is.na(hyb.ploidy.mat)]<-2
+hyb.ploidy.mat[is.na(hyb.ploidy.mat)]<-0
+table(hyb.ploidy.mat)
+
+#create 'P0' matrix (rows are samples and columns are SNPs, only samples from 'P0' population included)
+#isolate hybrid samples
+P0.mat<-conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P0"]]
+P0.mat<-t(as.matrix(P0.mat))
+
+#create 'ploidy.mat', an object that tells bgchm the ploidy of each genotype (called genotypes encoded as '2', missing genotypes encoded as '0')
+P0.ploidy.mat<-P0.mat
+P0.ploidy.mat[!is.na(P0.ploidy.mat)]<-2
+P0.ploidy.mat[is.na(P0.ploidy.mat)]<-0
+table(P0.ploidy.mat)
+
+#create 'P1' matrix (rows are samples and columns are SNPs, only hybrid samples included)
+#isolate hybrid samples
+P1.mat<-conv.mat[,colnames(conv.mat) %in% samps$ID[samps$pop == "P1"]]
+P1.mat<-t(as.matrix(P1.mat))
+
+#create 'ploidy.mat', an object that tells bgchm the ploidy of each genotype (called genotypes encoded as '2', missing genotypes encoded as '0')
+P1.ploidy.mat<-P1.mat
+P1.ploidy.mat[!is.na(P1.ploidy.mat)]<-2
+P1.ploidy.mat[is.na(P1.ploidy.mat)]<-0
+table(P1.ploidy.mat)
+```
+
+
+### debug est_p so it can handle missing genotypes
+```{r}
+est_p<-function(G0=NULL,G1=NULL,model="genotype",ploidy="diploid",pldat=NULL,
+	n_chains=4,n_iters=2000,p_warmup=0.5,n_thin=1,n_cores=NULL,HMC=FALSE,
+	full=TRUE){
+
+        ## get or set number of cores for HMC
+        if(is.null(n_cores)){
+                options(mc.cores = parallel::detectCores())
+        } else{
+                mc.cores<-n_cores
+        }
+
+        ## determine number of warmup iterations
+        n_warmup<-floor(p_warmup * n_iters)
+	
+	## jeffery prior for allele frequencies (alpha0 and beta0 for beta prior)
+	a0<-.5
+	b0<-.5
+
+	mqbeta<-function(p=NA,shape1=NA,shape2=NA){
+		o<-cbind(qbeta(p[1],shape1=a,shape2=b),
+		      qbeta(p[2],shape1=a,shape2=b),
+		      qbeta(p[3],shape1=a,shape2=b),
+		      qbeta(p[4],shape1=a,shape2=b),
+		      qbeta(p[5],shape1=a,shape2=b))
+		colnames(o)<- paste(p*100,"%",sep="")
+		return(o)
+	}
+
+	if(model=="genotype" & ploidy=="diploid"){
+		G0<-as.matrix(G0)
+		G1<-as.matrix(G1)
+		## solve for posterior
+		y<-apply(G0,2,sum)
+		n<-rep(dim(G0)[1] *2, dim(G0)[2])
+		a<-y+a0
+		b<-n-y+b0
+		p0<-mqbeta(c(.5,.025,.05,.95,.975),shape1=a,shape2=b)
+		y<-apply(G1,2,sum)
+		n<-rep(dim(G1)[1] *2, dim(G1)[2])
+		a<-y+a0
+		b<-n-y+b0
+		p1<-mqbeta(c(.5,.025,.05,.95,.975),shape1=a,shape2=b)
+		pout<-list(p0=p0,p1=p1)
+
+	} else if(model=="glik" & ploidy=="diploid"){
+		for(k in 1:3){
+			G0[[k]]<-as.matrix(G0[[k]])
+			G1[[k]]<-as.matrix(G1[[k]])
+		}
+		if(HMC==TRUE){ ## use HMC
+			dat<-list(L=dim(G0[[1]])[2],N0=dim(G0[[1]])[1],N1=dim(G1[[1]])[1],
+			GL00=G0[[1]],GL10=G1[[1]],GL01=G0[[2]],GL11=G1[[2]],GL02=G0[[3]],GL12=G1[[3]])
+			fit<-rstan::sampling(stanmodels$p_gl,data=dat,
+				iter=n_iters,warmup=n_warmup,thin=n_thin)
+			p0<-t(apply(rstan::extract(fit,"P0")[[1]],2,quantile,probs=c(.5,.025,.05,.95,.975)))
+			p1<-t(apply(rstan::extract(fit,"P1")[[1]],2,quantile,probs=c(.5,.025,.05,.95,.975)))
+			## create a list with parameter estimates plus full hmc object
+			if(full==TRUE){
+				pout<-list(p0=p0,p1=p1,p_hmc=fit)
+			} else{
+				pout<-list(p0=p0,p1=p1)
+			}
+		} else{ ## use analytical
+			## solve for posterior
+			y<-apply(G0[[2]]+G0[[3]]*2,2,sum)
+			n<-rep(dim(G0[[1]])[1] *2, dim(G0[[1]])[2])
+			a<-y+a0
+			b<-n-y+b0
+			p0<-mqbeta(c(.5,.025,.05,.95,.975),shape1=a,shape2=b)
+			y<-apply(G1[[2]]+G1[[3]]*2,2,sum)
+			n<-rep(dim(G1[[1]])[1] *2, dim(G1[[1]])[2])
+			a<-y+a0
+			b<-n-y+b0
+			p1<-mqbeta(c(.5,.025,.05,.95,.975),shape1=a,shape2=b)
+			pout<-list(p0=p0,p1=p1)
+		}
+	} else if(model=="genotype" & ploidy=="mixed"){
+		G0<-as.matrix(P0.mat)
+		G1<-as.matrix(P1.mat)
+		pldat[[2]]<-as.matrix(P0.ploidy.mat)
+		pldat[[3]]<-as.matrix(P1.ploidy.mat)
+		## solve for posterior
+		y<-apply(G0,2,sum,na.rm=TRUE)
+		n<-apply(pldat[[2]],2,sum)
+		a<-y+a0
+		b<-n-y+b0
+		p0<-mqbeta(c(.5,.025,.05,.95,.975),shape1=a,shape2=b)
+		y<-apply(G1,2,sum,na.rm=TRUE)
+		n<-apply(pldat[[3]],2,sum)
+		a<-y+a0
+		b<-n-y+b0
+		p1<-mqbeta(c(.5,.025,.05,.95,.975),shape1=a,shape2=b)
+		pout<-list(p0=p0,p1=p1)
+	
+	} else if(model=="glik" & ploidy=="mixed"){
+		for(k in 1:3){
+			G0[[k]]<-as.matrix(G0[[k]])
+			G1[[k]]<-as.matrix(G1[[k]])
+		}
+		pldat[[2]]<-as.matrix(pldat[[2]])
+		pldat[[3]]<-as.matrix(pldat[[3]])
+		
+		if(HMC==TRUE){ ## use HMC	
+			dat<-list(L=dim(G0[[1]])[2],N0=dim(G0[[1]])[1],N1=dim(G1[[1]])[1],
+			GL00=G0[[1]],GL10=G1[[1]],GL01=G0[[2]],GL11=G1[[2]],GL02=G0[[3]],GL12=G1[[3]],
+			ploidy0=pldat[[2]],ploidy1=pldat[[3]])
+			fit<-rstan::sampling(stanmodels$p_gl_mix,data=dat,
+				iter=n_iters,warmup=n_warmup,thin=n_thin)
+			p0<-t(apply(rstan::extract(fit,"P0")[[1]],2,quantile,probs=c(.5,.025,.05,.95,.975)))
+			p1<-t(apply(rstan::extract(fit,"P1")[[1]],2,quantile,probs=c(.5,.025,.05,.95,.975)))
+			## create a list with parameter estimates plus full hmc object
+			if(full==TRUE){
+				pout<-list(p0=p0,p1=p1,p_hmc=fit)
+			} else{
+				pout<-list(p0=p0,p1=p1)
+			}
+		} else { ## use analytical
+			## solve for posterior
+			y<-apply(G0[[2]]+G0[[3]]*2,2,sum,na.rm=T)
+			n<-apply(pldat[[2]],2,sum)
+			a<-y+a0
+			b<-n-y+b0
+			p0<-mqbeta(c(.5,.025,.05,.95,.975),shape1=a,shape2=b)
+			y<-apply(G1[[2]]+G1[[3]]*2,2,sum)
+			n<-n<-apply(pldat[[3]],2,sum)
+			a<-y+a0
+			b<-n-y+b0
+			p1<-mqbeta(c(.5,.025,.05,.95,.975),shape1=a,shape2=b)
+			pout<-list(p0=p0,p1=p1)
+		}
+	
+	} else{
+		stop("invalid model or ploidy specified")
+	}
+	return(pout)
+}
+```
+
+### use these formatted files as input for bgchm
+```{r}
+## estimate parental allele frequencies, uses analytical solution 
+p_out<-est_p(G0=P0.mat, G1=P1.mat, model="genotype", ploidy="mixed", HMC=FALSE,
+             pldat=list(hyb.ploidy.mat,P0.ploidy.mat,P1.ploidy.mat))
+
+#for the next steps to work, NA values in the 'hyb.mat' matrix need to be converted to zero. This is a bit odd since 0 also means a homozygous reference genoype. But rest assured these genotypes will be treated as missing as long as we specify mixed ploidy and provide the appropriate ploidy matrix.
+hyb.mat[is.na(hyb.mat)]<-0
+
+#estimate hybrid indexes, uses default HMC settings and point estimates (posterior medians) of allele frequencies
+h_out<-est_hi(Gx=hyb.mat, p0=p_out$p0[,1], p1=p_out$p1[,1], model="genotype", ploidy="mixed", pldat=hyb.ploidy.mat, n_iters = 200)
+## plot hybrid index estimates with 90% equal-tail probability intervals, sorted by hybrid index, just a nice way to visualize that in this example we have few hybrids with intermediate hybrid indexes
+plot(sort(h_out$hi[,1]),ylim=c(0,1),pch=19,xlab="Individual (sorted by HI)",ylab="Hybrid index (HI)")
+segments(1:100,h_out$hi[order(h_out$hi[,1]),3],1:100,h_out$hi[order(h_out$hi[,1]),4])
+
+#estimate clines
+gc_out<-est_genocl(Gx=hyb.mat, p0=p_out$p0[,1], p1=p_out$p1[,1], H=h_out$hi[,1], model="genotype", ploidy="mixed", hier=TRUE, n_iters=1000, pldat = hyb.ploidy.mat)
+
+#how variable is introgression among loci? Lets look at the cline SDs. these are related to the degree of coupling among loci overall.
+gc_out$SDc
+gc_out$SDv
+
+## examine a plot of the joint posterior distribution for the SDs
+pp_plot(objs=gc_out,param1="sdv",param2="sdc",probs=c(0.5,0.75,0.95),colors="black",addPoints=TRUE,palpha=0.1,pdf=FALSE,pch=19)
+
+#impose sum-to-zero constraint on log/logit scale. not totally necessary, but this is mostly a good idea
+sz_out<-sum2zero(hmc=gc_out$gencline_hmc,transform=TRUE,ci=0.90)
+
+## plot genomic clines for all loci, first without the sum-to-zero constraint, then with it... these differ more for some data sets than others
+gencline_plot(center=gc_out$center[,1],v=gc_out$gradient,pdf=FALSE)
+gencline_plot(center=sz_out$center[,1],v=sz_out$gradient,pdf=FALSE)
+
+#summarize loci with credible deviations from genome-average gradients, here the focus is specifically on steep clines indicative of loci introgressing less than the average
+which(sz_out$gradient[,2] > 1) ## index for loci with credibly steep clines
+sum(sz_out$gradient[,2] > 1) ## number of loci with credibly steep clines
+
+#plot the 95% CI for this steepness parameter
+plot(gc_out$gradient[,1],pch=19,xlab="SNP",ylab="gradient", ylim=c(0,2.2))
+segments(x0=1:nrow(gc_out$gradient), y0=gc_out$gradient[,2], y1=gc_out$gradient[,3])
+
+#re-plot with zero-centering
+plot(sz_out$gradient[,1],pch=19,xlab="SNP",ylab="gradient", ylim=c(0,2.2))
+segments(x0=1:nrow(sz_out$gradient), y0=sz_out$gradient[,2], y1=sz_out$gradient[,3])
+
+
+#helper function to color-code the excessively steep SNPs
+colvec<-c()
+for (i in 1:nrow(sz_out$gradient)){
+  if(sz_out$gradient[i,2] > 1){colvec[i]<-"red"}
+  else(colvec[i]<-"black")
+}
+colvec
+
+#identify these SNPs of interest
+gencline_plot(center=gc_out$center[,1],v=gc_out$gradient,pdf=FALSE, cvec = colvec)
+
+#plot these outliers
+plot(gc_out$gradient[,1],pch=19,xlab="SNP",ylab="gradient", ylim=c(0,2.2), col=colvec)
+segments(x0=1:nrow(gc_out$gradient), y0=gc_out$gradient[,2], y1=gc_out$gradient[,3], col = colvec)
+
+#calc data for triangle plot
+q_out<-est_Q(Gx=hyb.mat,p0=p_out$p0[,1],p1=p_out$p1[,1],model="genotype",ploidy="mixed",pldat = hyb.ploidy.mat, n_iters = 200)
+
+## plot the results
+tri_plot(hi=q_out$hi[,1],Q10=q_out$Q10[,1],pdf=FALSE,pch=19)
+```
+
+### analyze whether the putative inversion SNPs are outliers in terms of experiencing 'restricted introgression'
+```{r}
+library(triangulaR)
+colnames(samps)<-c("id","pop")
+# Create a new vcfR object composed only of sites above the given allele frequency difference threshold
+fixed.vcf <- alleleFreqDiff(vcfR = example.vcf, pm = samps, p1 = "P1", p2 = "P0", difference = 1)
+#get list of chromosomes to help identify the putative inversion
+table(fixed.vcf@fix[,1])
+#helper function to color-code the excessively steep SNPs
+colvec<-c()
+for (i in 1:length(fixed.vcf@fix[,1])){
+  if(fixed.vcf@fix[i,1] == "VZSJ01000270.1" | fixed.vcf@fix[i,1] == "VZSJ01000457.1"){colvec[i]<-"red"}
+  else(colvec[i]<-"black")
+}
+colvec
+
+#identify these SNPs of interest
+gencline_plot(center=gc_out$center[,1],v=gc_out$gradient,pdf=FALSE, cvec = colvec, xvec = (rep(.05, times=length(colvec))))
+#plot these outliers
+plot(gc_out$gradient[,1],pch=19,xlab="SNP",ylab="gradient", ylim=c(0,2.2), col=colvec)
+segments(x0=1:nrow(gc_out$gradient), y0=gc_out$gradient[,2], y1=gc_out$gradient[,3], col = colvec)
+#plot these outliers
+plot(gc_out$center[,1],pch=19,xlab="SNP",ylab="center", ylim=c(0,1), col=colvec)
+segments(x0=1:nrow(gc_out$center), y0=gc_out$center[,2], y1=gc_out$center[,3], col = colvec)
+```
+
+### investigate the dynamics of outlier SNPs
+```{r}
+#make genotype plot for directionally introgressed SNPs
+test.only<-fixed.vcf[gc_out$center[,1] < 0.3,]
+#isolate gt matrix
+gt<-as.data.frame(t(extract.gt(test.only)))
+gt$sample<-rownames(gt)
+dat3 <- reshape2::melt(gt, id.var = 'sample')
+#plot
+ggplot(dat3, aes(variable, sample)) +
+  geom_tile(aes(fill = value), colour = "white") +
+  scale_fill_manual(values=c("lightpink", "red", "black")) +
+  theme(axis.text.y = element_text(size = 5))
+
+#make genotype plot for directionally introgressed SNPs
+test.only<-fixed.vcf[gc_out$center[,1] > 0.7,]
+#isolate gt matrix
+gt<-as.data.frame(t(extract.gt(test.only)))
+gt$sample<-rownames(gt)
+dat3 <- reshape2::melt(gt, id.var = 'sample')
+#plot
+ggplot(dat3, aes(variable, sample)) +
+  geom_tile(aes(fill = value), colour = "white") +
+  scale_fill_manual(values=c("lightpink", "red", "black")) +
+  theme(axis.text.y = element_text(size = 5))
+
+#make genotype plot for SNPs resisting introgression
+test.only<-fixed.vcf[gc_out$gradient[,1] > 1.5,]
+#isolate gt matrix
+gt<-as.data.frame(t(extract.gt(test.only)))
+gt$sample<-rownames(gt)
+dat3 <- reshape2::melt(gt, id.var = 'sample')
+#plot
+ggplot(dat3, aes(variable, sample)) +
+  geom_tile(aes(fill = value), colour = "white") +
+  scale_fill_manual(values=c("lightpink", "red", "black")) +
+  theme(axis.text.y = element_text(size = 5))
+
+#make genotype plot for inversion
+test.only<-fixed.vcf[fixed.vcf@fix[,1] == "VZSJ01000457.1" | fixed.vcf@fix[,1] == "VZSJ01000270.1",]
+#isolate gt matrix
+gt<-as.data.frame(t(extract.gt(test.only)))
+gt$sample<-rownames(gt)
+dat3 <- reshape2::melt(gt, id.var = 'sample')
+#plot
+ggplot(dat3, aes(variable, sample)) +
+  geom_tile(aes(fill = value), colour = "white") +
+  scale_fill_manual(values=c("lightpink", "red", "black")) +
+  theme(axis.text.y = element_text(size = 5))
+```
+Inversion looks similar to SNPs resisting introgression, but the presence of het inverted haplotypes is actually preventing this region from being considered a consistent outlier in terms of 'restricted introgression' (based on the requirement that the 'gradient' parameter's 95% CI does not overlap 1). This becomes apparent only from looking at the genotype plots, highlighting their utility when using genomic cline analysis.
+
+### fit geographic clines
+```{r}
+## load the data set
+data(pfreqs)
+## this includes one object, a matrix P with allele frequencies, 110 rows = demes, 51 columns = loci
+P[1:5,1:5]
+#read back in sample info with sampling localities included
+samps<-read.csv("https://raw.githubusercontent.com/DevonDeRaad/grosbeak.rad.hybridtransect/refs/heads/main/data/grosbeak.sample.info.csv")
+
+#match order
+samps$sample_id == rownames(hyb.mat)
+samps<-samps[match(rownames(hyb.mat),samps$sample_id),]
+samps$sample_id == rownames(hyb.mat)
+
+#add NA's back in to hyb.mat
+hyb.mat[hyb.ploidy.mat == 0]<-NA
+
+freq<-c()
+freq.df<-matrix(nrow = 11,ncol=266)
+for (i in 1:ncol(hyb.mat)){
+  for (k in 1:11){
+    #calculate AF per sampling site for the given SNP
+    freq[k]<-mean(hyb.mat[,i][samps$site == k],na.rm = TRUE)/2
+  }
+  #store that information in a dataframe and then move on to the next SNP
+  freq.df[,i]<-freq
+}
+
+
+## use linearized distance (calculated elsewhere) as x-axis
+x<-c(0.0000, 186.5097, 223.2239, 255.3094, 305.0567, 331.3545, 355.4688, 375.3938, 405.1474, 436.3640, 573.5127)
+
+## fit the geographic cline model
+o<-est_geocl(P=freq.df, Geo = x, prec = 1/22, y_lb = -2, y_ub = 2, hier=TRUE, n_iters=200)
+
+## plot clines on logit scale, which should be linear
+plot(x,o$cent[1,1] + o$slope[1,1] * x,type='l',ylim=c(-15,15),ylab="Logit allele frequency",xlab="Deme number",
+	axes=FALSE)
+axis(1,at=x)
+axis(2)
+box()
+for(i in 2:266){
+	lines(x,o$cent[i,1] + o$slope[i,1] * x)
+}
+
+## plot the raw data as points
+plot(x, freq.df[,1], ylab="allele frequency",xlab="Deme number",axes=FALSE, type="p")
+axis(1,at=x)
+axis(2)
+box()
+for(i in 2:266){
+	points(x,freq.df[,i])
+}
+
+## plot the raw data as lines
+plot(x, freq.df[,1], ylab="allele frequency",xlab="Deme number",axes=FALSE, type="l")
+axis(1,at=x)
+axis(2)
+box()
+for(i in 2:266){
+	lines(x,freq.df[,i])
+}
+```
+
+### fit NLS clines on a per-SNP basis
+```{r}
+#for some reason the nls function requires that the curve go from high to low, so we are going to have to repolarize the allele frequencies by subtracting each from 1:
+freq.df.pol<-1-freq.df
+cline.df<-as.data.frame(freq.df.pol)
+#add in distance info
+cline.df$dist<-x
+
+#define the function used to fit the sigmoidal curve
+# set 'maxval' = the maximum value of the measured trait
+maxval=1
+rhs <- function(x, c, w) {
+  maxval/(1+exp((4*(x-c))/w))
+}
+
+models<-list()
+for (i in 1:266){
+#model the cline for each fixed SNP
+models[[i]] <- nls(cline.df[,i] ~ rhs(dist, center, width),
+                   data = cline.df,
+                   start=list(center=cline.df$dist[cline.df[,i] < .5][1],width=100),
+                   control = list(maxiter = 500),
+                   trace=T)
+}
+
+
+## plot each cline model
+plot(cline.df[,1]~cline.df$dist, col="white")
+c<-coef(models[[1]])[1]
+w<-coef(models[[1]])[2]
+lines(x<-1:max(cline.df$dist),1/(1+exp((4*(x-c))/w)),col='black')
+for(i in 2:266){
+  c<-coef(models[[i]])[1]
+  w<-coef(models[[i]])[2]
+  lines(x<-1:max(cline.df$dist),1/(1+exp((4*(x-c))/w)),col='black')
+}
+
+## plot each cline model unsmoothed and with points underneath
+plot(cline.df[,1]~cline.df$dist, col="black")
+c<-coef(models[[1]])[1]
+w<-coef(models[[1]])[2]
+lines(x<-cline.df$dist,1/(1+exp((4*(x-c))/w)),col='black')
+for(i in 2:266){
+  points(cline.df[,i]~cline.df$dist, col="black")
+  c<-coef(models[[i]])[1]
+  w<-coef(models[[i]])[2]
+  lines(x<-cline.df$dist,1/(1+exp((4*(x-c))/w)),col='black')
+}
+
+## color code the putative inversion SNPs in red
+plot(cline.df[,1]~cline.df$dist, col="white")
+c<-coef(models[[1]])[1]
+w<-coef(models[[1]])[2]
+lines(x<-1:max(cline.df$dist),1/(1+exp((4*(x-c))/w)),col=colvec[1], lwd=0.05)
+for(i in 2:266){
+  c<-coef(models[[i]])[1]
+  w<-coef(models[[i]])[2]
+  lines(x<-1:max(cline.df$dist),1/(1+exp((4*(x-c))/w)),col=colvec[i], lwd=0.05)
+}
+
+## color code the putative inversion SNPs in red
+plot(cline.df[,1]~cline.df$dist, col="white")
+c<-coef(models[[1]])[1]
+w<-coef(models[[1]])[2]
+lines(x<-cline.df$dist,1/(1+exp((4*(x-c))/w)),col=colvec[1], lwd=0.05)
+for(i in 2:266){
+  c<-coef(models[[i]])[1]
+  w<-coef(models[[i]])[2]
+  lines(x<-cline.df$dist,1/(1+exp((4*(x-c))/w)),col=colvec[i], lwd=0.05)
+}
+
+```
+
