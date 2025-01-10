@@ -1,3 +1,24 @@
+# The following repository holds all data and code for the manuscript:
+Reconstructing the true evolutionary history of the Buzzing Flowerpecker (*Dicaeum hypoleucum*) despite extensive incomplete lineage sorting and ongoing gene flow.
+- Lead author: Devon DeRaad (devonderaad@gmail.com)
+
+### Sample mapping
+* Detailed code showing how I created the sampling map using occurence data from the [eBirdst](https://ebird.github.io/ebirdst/) R package can be viewed at: [https://devonderaad.github.io/grosbeak.rad.hybridtransect/grosbeak.sampling.mapping.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/grosbeak.sampling.mapping.html).
+
+### Data availability
+* SNP datasets and sampling sheets can be found in the folder named [data](https://github.com/DevonDeRaad/grosbeak.rad.hybridtransect/tree/main/data).
+* fastq files containing all raw sequence data will be archived as a single BioProject via NCBI upon the acceptance of this manuscript.
+
+### Sequence data to SNPs
+* All code used to map raw RADseq reads to the reference genome and  during the [Stacks](https://catchenlab.life.illinois.edu/stacks/) RAD locus assembly, processing, and SNP calling pipeline can be found in the folder called [sequence.data.to.snps](https://github.com/DevonDeRaad/grosbeak.rad.hybridtransect/tree/main/sequence.data.to.snps).
+
+### SNP filtering
+* We used the R packages [vcfR](https://knausb.github.io/vcfR_documentation/) and [SNPfiltR](https://devonderaad.github.io/SNPfiltR/) to optimize and implement a series of SNP filtering thresholds. This entire protocol can be viewed at: [https://devonderaad.github.io/grosbeak.rad.hybridtransect/grosbeak.filtering.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/grosbeak.filtering.html).
+
+
+### Principal Components Analysis
+* A vignette sty
+
 This repository will hold the analyses of the Grosbeak RADseq hybrid transect.
 
 
