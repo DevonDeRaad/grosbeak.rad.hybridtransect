@@ -15,11 +15,18 @@ Reconstructing the true evolutionary history of the Buzzing Flowerpecker (*Dicae
 ### SNP filtering
 * We used the R packages [vcfR](https://knausb.github.io/vcfR_documentation/) and [SNPfiltR](https://devonderaad.github.io/SNPfiltR/) to optimize and implement a series of SNP filtering thresholds. This entire protocol can be viewed at: [https://devonderaad.github.io/grosbeak.rad.hybridtransect/grosbeak.filtering.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/grosbeak.filtering.html).
 
+### Generating a phylogenetic network
+* A vignette style walkthrough detailing how I generated a phylogenetic network using ~50K genome-wide filtered SNPs as input is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/grosbeak.splitstree.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/grosbeak.splitstree.html).
 
-### Principal Components Analysis
-* A vignette sty
+### Unsupervised ancestry assignment
+* A vignette style walkthrough the results of running the program *ADMIXTURE* on multiple datasets and testing for multimodality in genomic ancestry, is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/grosbeak.run.ADMIXTURE.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/grosbeak.run.ADMIXTURE.html).
 
-This repository will hold the analyses of the Grosbeak RADseq hybrid transect.
+### Geographic cline analysis
+* A vignette style walkthrough of how I adapted the protocol outlined by [Aguillon and Rohwer, 2022](https://academic.oup.com/evolut/article/76/5/1082/6881794) to generate geographic clines for mitochondrial ancestry, genomic ancestry, and male phenotype is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/nls.clines.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/nls.clines.html).
 
+### Assessing the relationship between mitochondrial ancestry, genomic ancestry, and male phenotype
+* A vignette style walkthrough of how I tested and visualized the relationship between mitochondrial ancestry, genomic ancestry, and male phenotype is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/triangle.plots.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/triangle.plots.html).
+  
+### Testing for an association between testis size and genomic ancestry
+* A vignette style walkthrough of testing for a linear association between genomic ancestry and male testis size is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/association.testing.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/associtation.testing.html).
 
-If you want to see the filtering process look [here](https://devonderaad.github.io/grosbeak.rad.hybridtransect/grosbeak.filtering.html).
