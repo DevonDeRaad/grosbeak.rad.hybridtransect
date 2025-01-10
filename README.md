@@ -25,8 +25,8 @@ Strong selection maintains a narrow, stable avian tension zone in the Great Plai
 * A vignette style walkthrough of how I adapted the protocol outlined by [Aguillon and Rohwer, 2022](https://academic.oup.com/evolut/article/76/5/1082/6881794) to generate geographic clines for mitochondrial ancestry, genomic ancestry, and male phenotype is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/nls.clines.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/nls.clines.html).
 
 ### Assessing the relationship between mitochondrial ancestry, genomic ancestry, and male phenotype
-* A vignette style walkthrough of how I tested and visualized the relationship between mitochondrial ancestry, genomic ancestry, and male phenotype is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/triangle.plots.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/triangle.plots.html).
+* A vignette style walkthrough of how I tested and visualized the relationship between mitochondrial ancestry, genomic ancestry, and male phenotype is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/grosbeak.triangle.plots.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/grosbeak.triangle.plots.html).
   
 ### Testing for an association between testis size and genomic ancestry
-* A vignette style walkthrough of testing for a linear association between genomic ancestry and male testis size is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/association.testing.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/associtation.testing.html).
+* A vignette style walkthrough of testing for a linear association between genomic ancestry and male testis size is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/association.testing.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/association.testing.html).
 
