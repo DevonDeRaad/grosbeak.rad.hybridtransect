@@ -88,6 +88,28 @@ mean(male$total.testis.area[male$minor.ancestry >.02])
 mean(male$total.testis.area[male$minor.ancestry <.2])
 mean(male$total.testis.area[male$minor.ancestry >.2])
 
+#try separating by class and species
+mean(male$total.testis.area[male$mac.lud.q < .05])
+mean(male$total.testis.area[male$mac.lud.q > .05 & male$mac.lud.q < .5])
+mean(male$total.testis.area[male$mac.lud.q > .5 & male$mac.lud.q < .95])
+mean(male$total.testis.area[male$mac.lud.q > .95])
+
+#make a column assigning samples as pure parental or hybrid
+male$class<-"x"
+male$class[male$mac.lud.q < .05]<-"melanocephalus"
+male$class[male$mac.lud.q > .05 & male$mac.lud.q < .5]<-"melanocephalus hybrid"
+male$class[male$mac.lud.q > .5 & male$mac.lud.q < .95]<-"ludovicianus hybrid"
+male$class[male$mac.lud.q > .95]<-"ludovicianus"
+
+#plot the boxplots
+ggplot(male, aes(class, total.testis.area)) + 
+  geom_boxplot() + 
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#boxplot(total.testis.area ~ class, data = male)
+#no apparent differences based on ancestry class
+
 #plot individual testis measurements
 plot(male$minor.ancestry, male$Ltestislength)
 plot(male$minor.ancestry, male$Ltestiswidth)
@@ -98,7 +120,10 @@ plot(male$minor.ancestry, male$Rtestiswidth)
 cor(male$minor.ancestry,male$total.testis.area)
 lm<-lm(total.testis.area ~ minor.ancestry, data = male)
 summary(lm)
+```
 
+### Plot final figure
+```{r}
 #plot with best fit linear regression line laid over
 p<-ggplot(male, aes(x=minor.ancestry, y=total.testis.area)) +
       geom_point(cex = 3, alpha = .5)+
@@ -117,7 +142,7 @@ ggMarginal(p, type = "histogram")
 
 #save
 pp<-ggMarginal(p, type = "histogram") 
-ggsave("~/Desktop/grosbeak.rad/testis.ancestry.plot.pdf", pp, width = 4,height = 4,units = "in")
+#ggsave("~/Desktop/grosbeak.rad/testis.ancestry.plot.pdf", pp, width = 4,height = 4,units = "in")
 
 ```
 
