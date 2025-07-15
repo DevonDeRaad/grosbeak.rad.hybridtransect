@@ -28,5 +28,5 @@ Strong selection maintains a narrow, stable avian tension zone in the Great Plai
 * A vignette style walkthrough of how I tested and visualized the relationship between mitochondrial ancestry, genomic ancestry, and male phenotype is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/grosbeak.triangle.plots.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/grosbeak.triangle.plots.html).
   
 ### Testing for an association between testis size and genomic ancestry
-* A vignette style walkthrough of testing for a linear association between genomic ancestry and male testis size is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/association.testing.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/association.testing.html).
+* A vignette style walkthrough of testing for a linear association between genomic ancestry and male testis size is available to view at [https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/grosbeak.association.testing.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/grosbeak.association.testing.html).
 
