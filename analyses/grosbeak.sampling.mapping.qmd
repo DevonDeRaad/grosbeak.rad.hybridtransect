@@ -337,5 +337,69 @@ plot(proven, add=TRUE, col="black", bg="white", pch=21, cex=1)
 ```
 
 
+### repeat in reverse order, to assess whether one raster is blocking the other
+```{r}
+### plot them together
 
+#remove 0 cells from BH raster which would overwrite the presence data from the rose-breasted
+y <- classify(BHabd_breeding_laea, cbind(-Inf, 0, NA))
+
+#remove 0 cells from RB raster 
+abd_breeding_laea <- classify(abd_breeding_laea, cbind(-Inf, 0, NA))
+
+# define the map plotting extent with the region boundary polygon
+region_boundary_laea <- region_boundary |> 
+  st_geometry() |> 
+  st_transform(crs_laea)
+# natural earth boundaries
+countries <- ne_countries(returnclass = "sf") |> 
+  st_geometry() |> 
+  st_transform(crs_laea)
+states <- ne_states(iso_a2 = "US") |> 
+  st_geometry() |> 
+  st_transform(crs_laea)
+# quantiles of non-zero values
+v <- values(abd_breeding_laea, na.rm = TRUE, mat = FALSE)
+v <- v[v > 0]
+breaks <- quantile(v, seq(0, 1, by = 0.1))
+# add a bin for 0
+breaks <- c(0, breaks)
+
+#color-code separately
+plot(region_boundary_laea, border = "black", lwd=5)
+#plot(countries, col = "grey90", border = "grey90", add = TRUE)
+# add relative abundance
+plot(y, breaks = breaks, col = c("#e6e6e6","#fffdd0","#fffbae","#fff86b","#fff64e",
+             "#fff319","#f5e900","#e5da00","#d5cb00","#b4ab00","#878000"),
+     maxcell = ncell(abd_breeding_laea),legend = FALSE, add=TRUE)
+plot(abd_breeding_laea,
+     breaks = breaks, col = c("#e6e6e6",brewer.pal(9, 'Reds'),"#450009"), 
+     maxcell = ncell(abd_breeding_laea),
+     legend = FALSE,add=TRUE)
+plot(region_boundary_laea, border = "black", lwd=5,add=TRUE)
+
+#reproject the sampling points and add them
+prove<- vect(samps,geom=c("decimallongitude", "decimallatitude"),crs="+proj=longlat")
+proven <- project(prove, crs_laea)
+
+## 1. Open a pdf file
+#pdf("~/Desktop/grosbeak.rad/SD.grosbeak.breeding.distribution.map.sampling.pdf", width=6, height=4) 
+## 2. Create a plot
+plot(region_boundary_laea, border = "black", lwd=5)
+plot(y, breaks = breaks, col = c("#e6e6e6","#fffdd0","#fffbae","#fff86b","#fff64e",
+             "#fff319","#f5e900","#e5da00","#d5cb00","#b4ab00","#878000"),
+     maxcell = ncell(abd_breeding_laea),legend = FALSE, add=TRUE)
+plot(abd_breeding_laea,
+     breaks = breaks, col = c("#e6e6e6",brewer.pal(9, 'Reds'),"#450009"), 
+     maxcell = ncell(abd_breeding_laea),
+     legend = FALSE,add=TRUE)
+plot(region_boundary_laea, border = "black", lwd=5,add=TRUE)
+#add sampling points
+plot(proven, add=TRUE, col="black", bg="white", pch=21, cex=1)
+## 3. close plot
+#dev.off()
+
+```
+
+This second approach actually made the hybrid zone appear even further west, which is not accurate according to our phenotypic and genomic data. So in the paper, we will use the first approach, which is more accurate according to our transect.
 
