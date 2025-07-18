@@ -1,5 +1,5 @@
 # The following repository holds all data and code for the manuscript: *Strong selection maintains a narrow, stable avian tension zone in the Great Plains (genus *Pheucticus*)*
-- Lead author: Devon DeRaad (devonderaad@gmail.com)
+### Please contact lead author Devon DeRaad (devonderaad@gmail.com) with any questions about the analyses presented here.
 
 ### Sample mapping
 * Detailed code showing how I created the sampling map using occurence data from the [eBirdst](https://ebird.github.io/ebirdst/) R package can be viewed at: [https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/grosbeak.sampling.mapping.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/grosbeak.sampling.mapping.html).
