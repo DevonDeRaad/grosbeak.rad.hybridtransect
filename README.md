@@ -1,5 +1,5 @@
 # The following repository holds all data and code for the manuscript:
-Strong selection maintains a narrow, stable avian tension zone in the Great Plains (genus *Pheucticus*)
+*Strong selection maintains a narrow, stable avian tension zone in the Great Plains (genus *Pheucticus*)*
 - Lead author: Devon DeRaad (devonderaad@gmail.com)
 
 ### Sample mapping
