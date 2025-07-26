@@ -342,6 +342,14 @@ hist(samps$mac.lud.q[samps$site == 8 | samps$site == 9 | samps$site == 7 | samps
 #Dip test to see if we can reject unimodality
 dip.test(samps$mac.lud.q[samps$site == 8 | samps$site == 9| samps$site == 7| samps$site == 6 | samps$site == 10], simulate.p.value = TRUE, B = 10000)
 
+#export Fig S3
+## 1. Open a pdf file
+#pdf("~/Desktop/grosbeak.rad/fig.S3.histogram.sites7-9.pdf", width=6, height=4) 
+## 2. Create a plot
+#combine sites 8 & 9 (either side of the transition)
+hist(samps$mac.lud.q[samps$site == 7 | samps$site == 8 | samps$site == 9], breaks = 25, xlab="ludovicianus ancestry (sites 7 - 9)", xlim=c(0,1), main=NULL)
+## 3. Close the pdf file
+#dev.off()
 ```
 
 ### visualize mean ancestry across the transect (i.e., quick and dirty geographic cline)
