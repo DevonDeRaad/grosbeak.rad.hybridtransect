@@ -1,4 +1,5 @@
-# The following repository holds all data and code for the manuscript: Strong selection maintains a narrow, stable avian tension zone in the Great Plains
+### This repository holds all data and code for the manuscript:
+# Strong selection maintains a narrow, stable avian tension zone in the Great Plains
 ### Please contact lead author Devon DeRaad (devonderaad@gmail.com) with any questions about the analyses presented here.
 
 ### Sample mapping
