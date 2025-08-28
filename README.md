@@ -1,8 +1,8 @@
+[![DOI](https://zenodo.org/badge/898162927.svg)](https://doi.org/10.5281/zenodo.16990208)
+
 ### This repository holds all data and code for the manuscript:
 # Strong selection maintains a narrow, stable avian tension zone in the Great Plains
 ### Please contact lead author Devon DeRaad (devonderaad@gmail.com) with any questions about the analyses presented here.
-
-[![DOI](https://zenodo.org/badge/898162927.svg)](https://doi.org/10.5281/zenodo.16990208)
 
 ### Sample mapping
 * Detailed code showing how I created the sampling map using occurence data from the [eBirdst](https://ebird.github.io/ebirdst/) R package can be viewed at: [https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/grosbeak.sampling.mapping.html](https://devonderaad.github.io/grosbeak.rad.hybridtransect/analyses/grosbeak.sampling.mapping.html).
